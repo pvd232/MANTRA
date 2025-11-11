@@ -28,7 +28,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Load AnnData
-    ad = sc.read_h5ad(args.adata)
+    ad = sc.read_h5ad(args.adata, backed="r")
 
     # ---- QC metrics ----
     sc.pp.calculate_qc_metrics(
