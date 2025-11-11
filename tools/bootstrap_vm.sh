@@ -43,12 +43,40 @@ else
   git -C "$HOME/MANTRA" reset --hard origin/main
 fi
 
-# -------- 4) Build/Update env (no heredocs) --------
-log "Creating/Updating conda env from configs/env.yml..."
-ENV_FILE="$HOME/MANTRA/configs/env.yml"
-if ! [ -f "$ENV_FILE" ]; then
-  log "ERROR: $ENV_FILE not found"; exit 1
+# assumes you've already created the 'mantra' conda env
+set -euo pipefail
+
+# Ensure we’re using conda’s shell functions (works in non-interactive scripts)
+if command -v conda >/dev/null 2>&1; then
+  eval "$(/usr/bin/env conda shell.bash hook)" || true
 fi
+
+# Prefer running inside the env via 'conda run' (avoids activation edge cases)
+PYBIN="conda run -n mantra python"
+if ! conda env list | awk '{print $1}' | grep -qx mantra; then
+  # fall back to current python if env isn't present yet
+  PYBIN="python"
+fi
+
+echo "Using interpreter: $PYBIN"
+$PYBIN - <<'PY'
+import sys, importlib, json
+mods = ["scanpy","numpy","scipy","pandas"]
+failures = {}
+for m in mods:
+    try:
+        mod = importlib.import_module(m)
+        v = getattr(mod, "__version__", "unknown")
+        print(f"[OK] {m} {v}")
+    except Exception as e:
+        failures[m] = repr(e)
+print("Python:", sys.version)
+if failures:
+    print("[ERROR] Import failures:", json.dumps(failures, indent=2))
+    raise SystemExit(1)
+PY
+echo "Python + core libs imported successfully."
+
 
 # Normalize line endings (safe & idempotent)
 sed -i 's/\r$//' "$ENV_FILE"
