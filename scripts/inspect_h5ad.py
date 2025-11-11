@@ -49,6 +49,8 @@ def detect_controls(obs: pd.DataFrame) -> int:
 
 def suggested_mt_mask(var: pd.DataFrame) -> Optional[pd.Series]:
     # Works if you have gene symbols or chromosome-like columns
+    for col in var.columns:
+        print("col", col)
     if "MT" in var.columns and var["MT"].dtype == bool:
         return var["MT"]  # already present
     sym = None
@@ -61,6 +63,7 @@ def suggested_mt_mask(var: pd.DataFrame) -> Optional[pd.Series]:
         except Exception:
             return None
     u = sym.str.upper()
+    print("u", u)
     mt = u.str.startswith(("MT-", "MT.", "MT_")) | u.eq("MT")
     for col in ("chrom", "chromosome", "chromosome_name", "seqname"):
         if col in var.columns:
