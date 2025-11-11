@@ -1,0 +1,130 @@
+# =========================
+# MANTRA — Repro Makefile
+# =========================
+# Usage (example):
+#   make bootstrap PROJECT=mantra-477901 ZONE=us-west4-a VM=mantra-g2 BUCKET=mantra-mlfg-prod-uscentral1-8e7a
+#   make gcs.init   PROJECT=... ZONE=... VM=... BUCKET=...
+#   make vm.run PIPELINE=all   # runs `make all` on the VM in conda env
+#   make gs.ls
+#   make data                  # local pipeline (if you want to run locally)
+#
+# Variables (override on the CLI as needed):
+SHELL := /bin/bash
+PROJECT ?= mantra-477901
+ZONE    ?= us-west4-a
+VM      ?= mantra-g2
+BUCKET  ?= mantra-mlfg-prod-uscentral1-8e7a
+
+# Internal
+REMOTE = $(VM) --project=$(PROJECT) --zone=$(ZONE)
+
+# -------------------------
+# Help
+# -------------------------
+.PHONY: help
+help:
+	@echo "Targets:"
+	@echo "  bootstrap        : Upload and run tools/bootstrap_vm.sh on VM (creates conda env, etc.)"
+	@echo "  bootstrap.run    : Re-run bootstrap on VM (script already present)"
+	@echo "  gcs.init         : Ensure GCS prefixes (data/raw, data/interim, manifests) exist"
+	@echo "  gs.ls            : List bucket top-level and common prefixes"
+	@echo "  vm.ssh           : Open an interactive SSH session on the VM"
+	@echo "  vm.cuda          : Check nvidia-smi and PyTorch CUDA availability on VM"
+	@echo "  vm.run           : Run a pipeline target on the VM (PIPELINE=<target>, default: all)"
+	@echo "  data             : LOCAL — fetch data"
+	@echo "  qc               : LOCAL — QC/EDA"
+	@echo "  cnmf             : LOCAL — cNMF"
+	@echo "  theta            : LOCAL — fit theta (SMR)"
+	@echo "  baseline         : LOCAL — baseline GWPS + metrics"
+	@echo "  all              : LOCAL — runs data qc cnmf theta baseline"
+
+# -------------------------
+# VM bootstrap (keeps your original script)
+# -------------------------
+.PHONY: bootstrap bootstrap.run
+bootstrap:
+	gcloud compute scp tools/bootstrap_vm.sh "$(VM):~/bootstrap_vm.sh" \
+	  --project="$(PROJECT)" --zone="$(ZONE)"
+	gcloud compute ssh $(REMOTE) -- \
+	  'bash -lc "chmod +x ~/bootstrap_vm.sh && PROJECT=$(PROJECT) BUCKET=$(BUCKET) ~/bootstrap_vm.sh"'
+
+bootstrap.run:
+	gcloud compute ssh $(REMOTE) -- \
+	  'bash -lc "PROJECT=$(PROJECT) BUCKET=$(BUCKET) ~/bootstrap_vm.sh"'
+
+# -------------------------
+# GCS helpers
+# -------------------------
+.PHONY: gcs.init gs.ls
+gcs.init:
+	# uploads your init_gcs.sh and ensures gs://$(BUCKET)/{data/raw,data/interim,manifests}
+	gcloud compute scp tools/init_gcs.sh "$(VM):~/init_gcs.sh" \
+	  --project="$(PROJECT)" --zone="$(ZONE)"
+	gcloud compute ssh $(REMOTE) -- \
+	  'bash -lc "chmod +x ~/init_gcs.sh && BUCKET=$(BUCKET) ~/init_gcs.sh"'
+
+gs.ls:
+	gcloud compute ssh $(REMOTE) -- \
+	  'bash -lc "gsutil ls gs://$(BUCKET)/; gsutil ls gs://$(BUCKET)/data/ || true; gsutil ls gs://$(BUCKET)/manifests/ || true"'
+
+# -------------------------
+# VM utilities
+# -------------------------
+.PHONY: vm.ssh vm.cuda vm.run
+vm.ssh:
+	gcloud compute ssh $(REMOTE)
+
+vm.cuda:
+	gcloud compute ssh $(REMOTE) -- \
+	  'bash -lc "source ~/miniconda3/etc/profile.d/conda.sh && conda activate mantra && \
+	    echo \"== nvidia-smi ==\" && (nvidia-smi || sudo nvidia-smi || true) && \
+	    echo \"== PyTorch CUDA check ==\" && python - <<'\''PY'\''
+import torch
+print('torch:', torch.__version__)
+print('cuda available:', torch.cuda.is_available())
+print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no gpu')
+PY"'
+
+
+# Run a pipeline target on the VM inside the conda env (default PIPELINE=all)
+PIPELINE ?= all
+vm.run:
+	gcloud compute ssh $(REMOTE) -- \
+	  'bash -lc "source ~/miniconda3/etc/profile.d/conda.sh && conda activate mantra && cd ~/MANTRA && make $(PIPELINE)"'
+
+# -------------------------
+# LOCAL pipeline (your original targets — unchanged)
+# -------------------------
+.PHONY: all data qc cnmf theta baseline
+
+all: data qc cnmf theta baseline
+
+data:
+	python scripts/00_fetch_data.py --config configs/paths.yml --manifest out/interim/manifest_data.json
+
+qc:
+	python scripts/01_qc_eda.py --params configs/params.yml --out out/interim --adata data/interim/unperturbed.h5ad
+
+cnmf:
+	python scripts/02_cnmf.py --params configs/params.yml --in out/interim --out out/interim
+
+theta:
+	python scripts/03_fit_theta_wls.py --trait MCH --in out/interim --smr data/smr --out out/interim
+
+baseline:
+	python scripts/04_deltaE_to_trait.py --in out/interim --gwps data/gwps --out out/interim
+	python scripts/05_metrics_and_plots.py --in out/interim --out out/interim
+
+.PHONY: data.download
+
+# Upload the downloader and run it ON the VM, writing into GCS
+data.download:
+	gcloud compute scp tools/download_data.sh "$(VM):~/download_data.sh" \
+	  --project="$(PROJECT)" --zone="$(ZONE)"
+	gcloud compute ssh $(REMOTE) -- \
+	  'bash -lc "chmod +x ~/download_data.sh && \
+	    BUCKET='$(BUCKET)' \
+	    PREFIX=data/raw \
+	    MANIFEST=\$$HOME/MANTRA/configs/download_manifest.csv \
+	    WORKDIR=\$$HOME/tmp_downloads \
+	    ~/download_data.sh"'

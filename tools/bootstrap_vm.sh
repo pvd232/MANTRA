@@ -75,4 +75,10 @@ PY
 # Driver sanity (again) — not fatal if needs sudo
 sudo nvidia-smi || nvidia-smi || true
 
+# -------- 6) System deps for data downloads --------
+# aria2 speeds up/robustifies large Figshare downloads (fallbacks to curl if absent)
+if ! command -v aria2c >/dev/null 2>&1; then
+  sudo apt-get update -y && sudo apt-get install -y aria2
+fi
+
 log "✅ Bootstrap complete."
