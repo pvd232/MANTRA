@@ -50,9 +50,9 @@ def main() -> None:
     for col in ad.var:
         print(f"col: {col}, type: ", ad.var[f"{col}"].dtype)
     for col in ad.obs.columns:
-        ad.obs[col] = ad.obs[col].astype(type(ad.obs[col]))
+        ad.obs[col] = ad.obs[col].astype(ad.obs[f"{col}"].dtype)
     for col in ad.var.columns:
-        ad.var[col] = ad.var[col].astype(type(ad.var[col]))
+        ad.var[col] = ad.var[col].astype(ad.var[f"{col}"].dtype)
     # for col in ad.vars.columns:
     #     # Try converting the column to numeric
     #     # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
