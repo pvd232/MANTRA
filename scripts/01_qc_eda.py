@@ -32,11 +32,23 @@ def main() -> None:
 
     # Load AnnData
     ad = sc.read_h5ad(args.adata, backed="r")
+
+    for col in ad.obs:
+        print("o col: ", col)
+        print(type(col))
+        print("o col val: ", ad.var[f"{col}"])
+        print("o val: ", ad.var[f"{col}"].dtype)
     for col in ad.var:
         print("col: ", col)
         print(type(col))
         # print("dtype: ", ad.var["dtype"])
         print("val: ", ad.var[f"{col}"].dtype)
+
+    # Option 1: If all values are valid integers (e.g., "1", "2")
+    try:
+        ad.obs["your_column_name"] = ad.obs["your_column_name"].astype(int)
+    except ValueError as e:
+        print(f"Error converting to int: {e}. Check for non-numeric strings.")
 
     # ---- QC metrics ----
     sc.pp.calculate_qc_metrics(
