@@ -49,21 +49,52 @@ def main() -> None:
     #     print("o val: ", ad.obs[f"{col}"].dtype)
     for col in ad.var:
         print(f"col: {col}, type: ", ad.var[f"{col}"].dtype)
+    for col in ad.obs.columns:
+        # Try converting the column to numeric
+        # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
+        numeric_col = pd.to_numeric(ad.obs[col], errors="coerce")
 
+        # Check if the conversion was successful and if there were non-numeric values
+        # If there were non-numeric values (resulting in NaNs), you might need to handle them
+        if numeric_col.notna().all() and not numeric_col.equals(ad.obs[col]):
+            # If all values are now numeric and the type changed, replace the original column
+            ad.obs[col] = numeric_col
+            print(f"Converted column '{col}' to numeric.")
+        else:
+            # Optionally, handle columns that couldn't be fully converted
+            print(
+                f"Column {col} remains as is (might contain non-numeric data or already numeric."
+            )
+    for col in ad.vars.columns:
+        # Try converting the column to numeric
+        # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
+        numeric_col = pd.to_numeric(ad.obs[col], errors="coerce")
+
+        # Check if the conversion was successful and if there were non-numeric values
+        # If there were non-numeric values (resulting in NaNs), you might need to handle them
+        if numeric_col.notna().all() and not numeric_col.equals(ad.obs[col]):
+            # If all values are now numeric and the type changed, replace the original column
+            ad.obs[col] = numeric_col
+            print(f"Converted column '{col}' to numeric.")
+        else:
+            # Optionally, handle columns that couldn't be fully converted
+            print(
+                f"Column {col} remains as is (might contain non-numeric data or already numeric."
+            )
     # print(type(col))
     # print("dtype: ", ad.var["dtype"])
     #     print("val: ", ad.var[f"{col}"].dtype)
 
     # Option 1: If all values are valid integers (e.g., "1", "2")
-    try:
-        ad.obs["your_column_name"] = ad.obs["your_column_name"].astype(int)
-    except ValueError as e:
-        print(f"Error converting to int: {e}. Check for non-numeric strings.")
+    # try:
+    #     ad.obs["your_column_name"] = ad.obs["your_column_name"].astype(int)
+    # except ValueError as e:
+    #     print(f"Error converting to int: {e}. Check for non-numeric strings.")
 
     # ---- QC metrics ----
     sc.pp.calculate_qc_metrics(
         ad,
-        qc_vars=["mean", "std", "cv", "fano"],
+        qc_vars=["mean", "std", "cv", "fano", "mitopercent", "UMI_count"],
         percent_top=None,
         log1p=False,
         inplace=True,
