@@ -99,10 +99,12 @@ def main() -> None:
                 f"Column {col} remains as is (might contain non-numeric data or already numeric."
             )
     priors = ["mean", "std", "cv", "fano", "mitopercent", "UMI_count"]
-    tot = [x for x in priors if x in conver_col]
+    qc_cols = [x for x in priors if x in conver_col]
     for col in conver_col:
         print(f"Converted column '{col}' to numeric.")
-    qc_cols = [x for x in tot]
+    for x in qc_cols:
+        print("qc", x)
+
     # print(type(col))
     # print("dtype: ", ad.var["dtype"])
     #     print("val: ", ad.var[f"{col}"].dtype)
