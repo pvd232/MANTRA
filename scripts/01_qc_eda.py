@@ -24,45 +24,23 @@ def build_argparser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_argparser().parse_args()
     params: Dict[str, Any] = yaml.safe_load(Path(args.params).read_text())
-    # for key in params.keys():
-    #     print("key", key)
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Load AnnData
     ad = sc.read_h5ad(args.adata).copy()
-    # print("ad", ad)
-    # print("ad.obs", ad.obs)
-    # print()
-    # print("ad.var", ad.var)
-    # print()
-    # return
 
     print("\n".join(list(ad.obs)))
     print()
     print("\n".join(list(ad.var)))
-    # for col in ad.obs.columns:
-    # for col in ad.var.columns:
-    #     ad.X = ad.X.astype(ad.var[f"{col}"].dtype)
 
-    # for col in ad.obs:
-    #     print(
-    #         f"o col: {col}, type: {ad.obs[f"{col}"].dtype} realType {type(ad.obs[f"{col}"])}"
-    #     )
-    # for col in ad.var:
-    #     print(
-    #         f"o col: {col}, type: {ad.var[f"{col}"].dtype} realType {type(ad.var[f"{col}"])}"
-    #     )
-    # ad.X = ad.X.astype(int)
     conver_col = []
 
     for col in ad.var.columns:
         # Try converting the column to numeric
         # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
         numeric_col = pd.to_numeric(ad.var[col], errors="coerce")
-        # print("pre num")
-        # print("numeric_col", numeric_col)
 
         # Check if the conversion was successful and if there were non-numeric values
         # If there were non-numeric values (resulting in NaNs), you might need to handle them
@@ -77,28 +55,7 @@ def main() -> None:
             print(
                 f"Column {col} remains as is (might contain non-numeric data or already numeric."
             )
-    # for col in ad.obs.columns:
-    #     # Try converting the column to numeric
-    #     # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
-    #     numeric_col = pd.to_numeric(ad.obs[col], errors="coerce")
-    #     # conver_col.append(numeric_col)
-    #     # print(f"Converted column '{col}' to numeric.")
 
-    #     # print("numeric_col 2", numeric_col)
-
-    #     # Check if the conversion was successful and if there were non-numeric values
-    #     # If there were non-numeric values (resulting in NaNs), you might need to handle them
-    #     if numeric_col.notna().all():
-    #         # If all values are now numeric and the type changed, replace the original column
-    #         ad.obs[col] = numeric_col
-    #         conver_col.append(col)
-
-    #         # print(f"Converted column '{col}' to numeric.")
-    #     else:
-    #         # Optionally, handle columns that couldn't be fully converted
-    #         print(
-    #             f"Column {col} remains as is (might contain non-numeric data or already numeric."
-    #         )
     priors = ["mean", "std", "cv", "fano", "mitopercent", "UMI_count"]
     qc_cols = [x for x in priors if x in conver_col]
     for col in conver_col:
@@ -106,16 +63,6 @@ def main() -> None:
         print(ad.var[col])
     for x in qc_cols:
         print("qc", x)
-
-    # print(type(col))
-    # print("dtype: ", ad.var["dtype"])
-    #     print("val: ", ad.var[f"{col}"].dtype)
-
-    # Option 1: If all values are valid integers (e.g., "1", "2")
-    # try:
-    #     ad.obs["your_column_name"] = ad.obs["your_column_name"].astype(int)
-    # except ValueError as e:
-    #     print(f"Error converting to int: {e}. Check for non-numeric strings.")
 
     # ---- QC metrics ----
     sc.pp.calculate_qc_metrics(
@@ -130,7 +77,7 @@ def main() -> None:
     min_genes = int(params["min_genes_per_cell"])
     pct_mito_max = float(params["pct_mito_max"])
     ad = ad[ad.obs["n_genes_by_counts"] > min_genes, :]
-    ad = ad[ad.obs["pct_counts_mt"] < pct_mito_max, :]
+    ad = ad[ad.obs["mitopercent"] < pct_mito_max, :]
 
     # Normalize + log + HVGs
     sc.pp.normalize_total(ad, target_sum=1e4)
