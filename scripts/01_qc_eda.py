@@ -76,28 +76,28 @@ def main() -> None:
             print(
                 f"Column {col} remains as is (might contain non-numeric data or already numeric."
             )
-    for col in ad.obs.columns:
-        # Try converting the column to numeric
-        # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
-        numeric_col = pd.to_numeric(ad.obs[col], errors="coerce")
-        # conver_col.append(numeric_col)
-        # print(f"Converted column '{col}' to numeric.")
+    # for col in ad.obs.columns:
+    #     # Try converting the column to numeric
+    #     # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
+    #     numeric_col = pd.to_numeric(ad.obs[col], errors="coerce")
+    #     # conver_col.append(numeric_col)
+    #     # print(f"Converted column '{col}' to numeric.")
 
-        # print("numeric_col 2", numeric_col)
+    #     # print("numeric_col 2", numeric_col)
 
-        # Check if the conversion was successful and if there were non-numeric values
-        # If there were non-numeric values (resulting in NaNs), you might need to handle them
-        if numeric_col.notna().all():
-            # If all values are now numeric and the type changed, replace the original column
-            ad.obs[col] = numeric_col
-            conver_col.append(col)
+    #     # Check if the conversion was successful and if there were non-numeric values
+    #     # If there were non-numeric values (resulting in NaNs), you might need to handle them
+    #     if numeric_col.notna().all():
+    #         # If all values are now numeric and the type changed, replace the original column
+    #         ad.obs[col] = numeric_col
+    #         conver_col.append(col)
 
-            # print(f"Converted column '{col}' to numeric.")
-        else:
-            # Optionally, handle columns that couldn't be fully converted
-            print(
-                f"Column {col} remains as is (might contain non-numeric data or already numeric."
-            )
+    #         # print(f"Converted column '{col}' to numeric.")
+    #     else:
+    #         # Optionally, handle columns that couldn't be fully converted
+    #         print(
+    #             f"Column {col} remains as is (might contain non-numeric data or already numeric."
+    #         )
     priors = ["mean", "std", "cv", "fano", "mitopercent", "UMI_count"]
     qc_cols = [x for x in priors if x in conver_col]
     for col in conver_col:
