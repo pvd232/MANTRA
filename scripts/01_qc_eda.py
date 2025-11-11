@@ -37,6 +37,7 @@ def main() -> None:
     print()
     print("ad.var", ad.var)
     print()
+    return
     # for col in ad.obs:
     #     print("o col: ", col)
     #     print(type(col))
