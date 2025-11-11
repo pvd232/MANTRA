@@ -50,37 +50,25 @@ def main() -> None:
     for col in ad.var:
         print(f"col: {col}, type: ", ad.var[f"{col}"].dtype)
     for col in ad.obs.columns:
-        # Try converting the column to numeric
-        # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
-        numeric_col = pd.to_numeric(ad.obs[col], errors="coerce")
+        ad.obs[col] = ad.obs[col].astype(type(ad.obs[col]))
+    for col in ad.var.columns:
+        ad.var[col] = ad.var[col].astype(type(ad.var[col]))
+    # for col in ad.vars.columns:
+    #     # Try converting the column to numeric
+    #     # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
+    #     numeric_col = pd.to_numeric(ad.obs[col], errors="coerce")
 
-        # Check if the conversion was successful and if there were non-numeric values
-        # If there were non-numeric values (resulting in NaNs), you might need to handle them
-        if numeric_col.notna().all() and not numeric_col.equals(ad.obs[col]):
-            # If all values are now numeric and the type changed, replace the original column
-            ad.obs[col] = numeric_col
-            print(f"Converted column '{col}' to numeric.")
-        else:
-            # Optionally, handle columns that couldn't be fully converted
-            print(
-                f"Column {col} remains as is (might contain non-numeric data or already numeric."
-            )
-    for col in ad.vars.columns:
-        # Try converting the column to numeric
-        # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
-        numeric_col = pd.to_numeric(ad.obs[col], errors="coerce")
-
-        # Check if the conversion was successful and if there were non-numeric values
-        # If there were non-numeric values (resulting in NaNs), you might need to handle them
-        if numeric_col.notna().all() and not numeric_col.equals(ad.obs[col]):
-            # If all values are now numeric and the type changed, replace the original column
-            ad.obs[col] = numeric_col
-            print(f"Converted column '{col}' to numeric.")
-        else:
-            # Optionally, handle columns that couldn't be fully converted
-            print(
-                f"Column {col} remains as is (might contain non-numeric data or already numeric."
-            )
+    #     # Check if the conversion was successful and if there were non-numeric values
+    #     # If there were non-numeric values (resulting in NaNs), you might need to handle them
+    #     if numeric_col.notna().all() and not numeric_col.equals(ad.obs[col]):
+    #         # If all values are now numeric and the type changed, replace the original column
+    #         ad.obs[col] = numeric_col
+    #         print(f"Converted column '{col}' to numeric.")
+    #     else:
+    #         # Optionally, handle columns that couldn't be fully converted
+    #         print(
+    #             f"Column {col} remains as is (might contain non-numeric data or already numeric."
+    #         )
     # print(type(col))
     # print("dtype: ", ad.var["dtype"])
     #     print("val: ", ad.var[f"{col}"].dtype)
