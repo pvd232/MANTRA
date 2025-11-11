@@ -42,17 +42,19 @@ def main() -> None:
     print("\n".join(list(ad.obs)))
     print()
     print("\n".join(list(ad.var)))
-    for col in ad.obs:
-        # print("o col: ", col)
-        # print(type(col))
-        print(f"o col: {col}, type: ", ad.obs[f"{col}"].dtype)
-    #     print("o val: ", ad.obs[f"{col}"].dtype)
-    for col in ad.var:
-        print(f"col: {col}, type: ", ad.var[f"{col}"].dtype)
     for col in ad.obs.columns:
         ad.obs[col] = ad.obs[col].astype(ad.obs[f"{col}"].dtype)
     for col in ad.var.columns:
         ad.var[col] = ad.var[col].astype(ad.var[f"{col}"].dtype)
+
+    for col in ad.obs:
+        print(
+            f"o col: {col}, type: {ad.obs[f"{col}"].dtype} realType {type(ad.obs[f"{col}"])}"
+        )
+    for col in ad.var:
+        print(
+            f"o col: {col}, type: {ad.var[f"{col}"].dtype} realType {type(ad.var[f"{col}"])}"
+        )
 
     # for col in ad.vars.columns:
     #     # Try converting the column to numeric
