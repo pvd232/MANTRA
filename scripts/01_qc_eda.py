@@ -43,9 +43,9 @@ def main() -> None:
     print()
     print("\n".join(list(ad.var)))
     for col in ad.obs.columns:
-        ad.obs[col] = ad.obs[col].astype(ad.obs[f"{col}"].dtype)
-    for col in ad.var.columns:
-        ad.var[col] = ad.var[col].astype(ad.var[f"{col}"].dtype)
+        ad.X = ad.X.astype(ad.obs[f"{col}"].dtype)
+    # for col in ad.var.columns:
+    #     ad.X = ad.X.astype(ad.var[f"{col}"].dtype)
 
     # for col in ad.obs:
     #     print(
@@ -59,7 +59,7 @@ def main() -> None:
     for col in ad.var.columns:
         # Try converting the column to numeric
         # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
-        numeric_col = pd.to_numeric(ad.var[col], errors="coerce")
+        numeric_col = pd.to_numeric(ad.var.x[col], errors="coerce")
 
         # Check if the conversion was successful and if there were non-numeric values
         # If there were non-numeric values (resulting in NaNs), you might need to handle them
