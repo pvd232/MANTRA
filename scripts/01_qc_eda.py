@@ -35,6 +35,7 @@ def main() -> None:
     for col in ad.var:
         print("col: ", col)
         print(type(col))
+        print("dtype: ", col["dtype"])
         print("val: ", ad.var[f"{col}"])
 
     # ---- QC metrics ----
