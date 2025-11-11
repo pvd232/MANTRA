@@ -104,6 +104,15 @@ make baseline # predict + metrics → yhat & metrics files
 ```
 
 ---
+Update VM git repo:
+```bash
+gcloud compute ssh mantra-g2 --project=mantra-477901 --zone=us-west4-a -- \                                         
+  'bash -lc "
+    cd ~/MANTRA
+    git pull
+  "'
+```
+
 
 ## Data sources
 

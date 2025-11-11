@@ -6,7 +6,8 @@ PROJECT ?= mantra-477901
 ZONE    ?= us-west4-a
 VM      ?= mantra-g2
 BUCKET  ?= mantra-mlfg-prod-uscentral1-8e7a
-
+SHELL := /bin/bash
+GCLOUD ?= gcloud
 REMOTE = $(VM) --project=$(PROJECT) --zone=$(ZONE)
 
 .PHONY: help
@@ -108,3 +109,23 @@ data.download:
 		MANIFEST=\$$HOME/MANTRA/configs/download_manifest.csv \
 		WORKDIR=\$$HOME/tmp_downloads \
 		~/download_data.sh"'
+
+vm.ensure_dirs:
+	@$(GCLOUD) compute ssh $(VM) --project=$(PROJECT) --zone=$(ZONE) -- \
+	  'bash -lc "mkdir -p ~/MANTRA/data/raw ~/MANTRA/data/interim ~/MANTRA/data/smr ~/MANTRA/out/interim && echo [ok] ensured local workspace dirs"'
+cleanup.staging:
+	@$(GCLOUD) compute ssh $(VM) --project=$(PROJECT) --zone=$(ZONE) -- \
+	  'bash -lc "cd ~/MANTRA && ./tools/cleanup.sh staging"'
+
+cleanup.raw.local:
+	@$(GCLOUD) compute ssh $(VM) --project=$(PROJECT) --zone=$(ZONE) -- \
+	  'bash -lc "cd ~/MANTRA && ./tools/cleanup.sh raw-local"'
+
+cleanup.all:
+	@$(GCLOUD) compute ssh $(VM) --project=$(PROJECT) --zone=$(ZONE) -- \
+	  'bash -lc "cd ~/MANTRA && ./tools/cleanup.sh all"'
+.PHONY: sync.raw.down sync.raw.verify sync.interim.up sync.interim.down sync.out.up sync.smr.down sync.smr.up sync.all.up sync.all.down
+
+sync.%:
+	@$(GCLOUD) compute ssh $(VM) --project=$(PROJECT) --zone=$(ZONE) -- \
+	  'bash -lc "cd ~/MANTRA && ./tools/sync.sh $*"'
