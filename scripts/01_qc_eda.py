@@ -32,6 +32,7 @@ def main() -> None:
 
     # Load AnnData
     ad = sc.read_h5ad(args.adata).copy()
+    print("ad", ad.shape)
 
     # --- trust existing mitopercent (must live in ad.obs) ---
     if "mitopercent" not in ad.obs.columns:
