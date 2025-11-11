@@ -37,6 +37,9 @@ def main() -> None:
     print("ad.var", ad.var)
     print()
     # return
+
+    print("\n".join(list(ad.obs)))
+    print("\n".join(list(ad.var)))
     for col in ad.obs:
         print("o col: ", col)
         # print(type(col))
