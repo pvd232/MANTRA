@@ -24,6 +24,9 @@ def build_argparser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_argparser().parse_args()
     params: Dict[str, Any] = yaml.safe_load(Path(args.params).read_text())
+    for key in params.keys():
+        print("key", key)
+
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -32,7 +35,11 @@ def main() -> None:
 
     # ---- QC metrics ----
     sc.pp.calculate_qc_metrics(
-        ad, qc_vars=["MT"], percent_top=None, log1p=False, inplace=True
+        ad,
+        qc_vars=["mean", "std", "cv", "fano"],
+        percent_top=None,
+        log1p=False,
+        inplace=True,
     )
 
     # Filters (explicit casts for Pylance)
