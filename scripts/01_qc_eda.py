@@ -42,8 +42,7 @@ def main() -> None:
     print("\n".join(list(ad.obs)))
     print()
     print("\n".join(list(ad.var)))
-    for col in ad.obs.columns:
-        ad.X = ad.X.astype(ad.obs[f"{col}"].dtype)
+    # for col in ad.obs.columns:
     # for col in ad.var.columns:
     #     ad.X = ad.X.astype(ad.var[f"{col}"].dtype)
 
@@ -55,11 +54,12 @@ def main() -> None:
     #     print(
     #         f"o col: {col}, type: {ad.var[f"{col}"].dtype} realType {type(ad.var[f"{col}"])}"
     #     )
+    ad.X = ad.X.astype(int)
 
     for col in ad.var.columns:
         # Try converting the column to numeric
         # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
-        numeric_col = pd.to_numeric(ad.var.x[col], errors="coerce")
+        numeric_col = pd.to_numeric(ad.var[col], errors="coerce")
 
         # Check if the conversion was successful and if there were non-numeric values
         # If there were non-numeric values (resulting in NaNs), you might need to handle them
