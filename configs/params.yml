@@ -1,0 +1,20 @@
+seed: 7
+hvg_n_top_genes: 3000
+pct_mito_max: 15.0
+min_genes_per_cell: 200
+
+cnmf:
+  K: 50
+  max_iter: 500
+  init: nndsvda
+  random_state: 7
+
+traits:
+  primary: MCH
+  extras: [RDW, IRF]
+
+manifold:
+  mu_grid: [0.0, 0.1, 0.3, 1.0]  # used in ablations later
+
+metrics:
+  calib_bins: 10

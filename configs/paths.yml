@@ -1,0 +1,17 @@
+raw_dir: data/raw
+interim_dir: data/interim
+smr_dir: data/smr
+
+sources:
+  ukb_rbc_gwas:
+    url: "<PUT-UKB-ENDPOINT>"
+    note: "UKB RBC trait summary stats for MCH/RDW/IRF"
+  smr_curated:
+    url: "<PUT-SMR/HEIDI-SLICE-LOCATION>"
+    note: "Gene-level SMR effects with SE; harmonized alleles"
+  k562_gwps:
+    url: "<PUT-K562-Perturb-seq-URL-or-figshare>"
+    note: "Regulator→gene effects and LoF/KD signs"
+  hct116_gwps:
+    url: "<PUT-HCT116-Orion/Atlas-URL>"
+    note: "Dose stratification by sgRNA-UMI quartiles"
