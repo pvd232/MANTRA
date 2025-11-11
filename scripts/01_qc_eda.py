@@ -31,7 +31,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Load AnnData
-    ad = sc.read_h5ad(args.adata, backed="r")
+    ad = sc.read_h5ad(args.adata, backed="w").copy()
     print("ad", ad)
     print("ad.obs", ad.obs)
     print()
@@ -53,6 +53,7 @@ def main() -> None:
         ad.obs[col] = ad.obs[col].astype(ad.obs[f"{col}"].dtype)
     for col in ad.var.columns:
         ad.var[col] = ad.var[col].astype(ad.var[f"{col}"].dtype)
+
     # for col in ad.vars.columns:
     #     # Try converting the column to numeric
     #     # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
