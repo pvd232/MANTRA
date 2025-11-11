@@ -1,279 +1,311 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse, json, math, os, sys
-from typing import Optional, Dict, Any, Tuple, List
 
-import anndata as ad
-import scanpy as sc
-import pandas as pd
+import argparse
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+import json
+import yaml
 import numpy as np
-import h5py
+import pandas as pd
+import scanpy as sc
+from anndata import AnnData
+from scipy import sparse
 
 
-def human_bytes(n: float) -> str:
-    if n is None:
-        return "n/a"
-    units = ["B", "KiB", "MiB", "GiB", "TiB"]
-    i = 0
-    while n >= 1024 and i < len(units) - 1:
-        n /= 1024.0
-        i += 1
-    return f"{n:.2f} {units[i]}"
+# ----------------------------
+# CLI
+# ----------------------------
+def build_argparser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(description="QC + EDA for unperturbed cells.")
+    ap.add_argument("--params", required=True, help="configs/params.yml")
+    ap.add_argument("--out", required=True, help="out/interim")
+    ap.add_argument("--adata", required=True, help="path to unperturbed .h5ad")
+    return ap
 
 
-def choose_regulator_column(obs: pd.DataFrame) -> Optional[str]:
-    # Prefer string/categorical columns with moderate-high cardinality (not per-cell unique)
-    text_like = [
-        c
-        for c in obs.columns
-        if pd.api.types.is_string_dtype(obs[c])
-        or pd.api.types.is_categorical_dtype(obs[c])
-    ]
-    best, best_card = None, 0
-    for c in text_like:
-        card = int(obs[c].nunique(dropna=True))
-        # typical regulator IDs: tens–thousands; exclude per-cell barcodes etc.
-        if 5 <= card <= max(20000, obs.shape[0] // 5) and card > best_card:
-            best, best_card = c, card
-    return best
-
-
-def detect_controls(obs: pd.DataFrame) -> int:
-    text = (obs.astype(str).agg(" ".join, axis=1)).str.lower()
-    ctrl_tokens = ("ntc", "control", "non-target", "negative", "scramble", "scrambled")
-    mask = pd.Series(False, index=obs.index)
-    for tok in ctrl_tokens:
-        mask |= text.str.contains(tok, na=False)
-    return int(mask.sum())
-
-
-def suggested_mt_mask(var: pd.DataFrame) -> Optional[pd.Series]:
-    # Works if you have gene symbols or chromosome-like columns
-    for col in var.columns:
-        print("col", col)
-    if "MT" in var.columns and var["MT"].dtype == bool:
-        return var["MT"]  # already present
-    sym = None
-    if "gene_symbols" in var.columns:
-        sym = var["gene_symbols"].astype(str)
-    else:
-        # Use index as fallback
-        try:
-            sym = var.index.astype(str)
-        except Exception:
-            return None
-    u = sym.str.upper()
-    print("u", u)
-    mt = u.str.startswith(("MT-", "MT.", "MT_")) | u.eq("MT")
-    for col in ("chrom", "chromosome", "chromosome_name", "seqname"):
-        if col in var.columns:
-            mt = mt | var[col].astype(str).str.upper().isin(["MT", "M"])
-    return mt
-
-
-def describe_X_lowlevel(h5: h5py.File) -> Dict[str, Any]:
+# ----------------------------
+# Utilities
+# ----------------------------
+def _pick_qc_matrix(adata: AnnData):
     """
-    Inspect X without materializing it. Detect dense vs (csr/csc)-sparse,
-    dtype, shape, nnz, and estimated dense/sparse sizes.
+    Prefer count-like matrices for QC in this order:
+      1) layers['counts']
+      2) raw.X
+      3) X
+    Returns (matrix, source_tag).
     """
-    out: Dict[str, Any] = {
-        "shape": None,
-        "dtype": None,
-        "is_sparse": None,
-        "sparse_format": None,
-        "nnz": None,
-        "est_dense_bytes": None,
-        "est_sparse_bytes": None,
-    }
-    if "X" not in h5:
-        return out
-    X = h5["X"]
-    # AnnData encodes sparse arrays as a group with keys {data,indices,indptr,shape}
-    if isinstance(X, h5py.Group) and set(X.keys()) >= {
-        "data",
-        "indices",
-        "indptr",
-        "shape",
-    }:
-        shp = tuple(int(i) for i in X["shape"][()])
-        nnz = int(X["data"].shape[0])
-        dt = X["data"].dtype.str
-        out.update(
-            {
-                "shape": shp,
-                "dtype": dt,
-                "is_sparse": True,
-                "sparse_format": "csr/csc (h5ad)",
-                "nnz": nnz,
-            }
+    if "counts" in (adata.layers or {}):
+        return adata.layers["counts"], "layers['counts']"
+    if adata.raw is not None:
+        return adata.raw.X, "raw.X"
+    return adata.X, "X"
+
+
+def _mt_mask_from_var(var: pd.DataFrame) -> Optional[pd.Series]:
+    """
+    Robust mitochondrial gene detection using the *actual* schema you printed:
+      - Prefer 'chr' if present (normalize to {M, MT, ...})
+      - Else fallback to 'gene_name' using human/mouse conventions (MT-..., mt-...)
+      - Else return None (skip MT gracefully)
+    """
+    if "chr" in var.columns:
+        chr_norm = (
+            var["chr"]
+            .astype(str)
+            .str.replace(r"^chr", "", case=False, regex=True)
+            .str.strip()
+            .str.upper()
         )
-        # size estimates
-        # data + indices + indptr (assume 4-byte int for indices/indptr unless h5 says otherwise)
-        ind_dt = X["indices"].dtype.itemsize
-        indptr_dt = X["indptr"].dtype.itemsize
-        data_dt = X["data"].dtype.itemsize
-        est_sparse = nnz * data_dt + nnz * ind_dt + (shp[0] + 1) * indptr_dt
-        out["est_sparse_bytes"] = est_sparse
-        # dense estimate if it were loaded as dense float32 (conservative)
-        out["est_dense_bytes"] = shp[0] * shp[1] * 4
-        return out
+        mt = chr_norm.isin({"M", "MT", "MITO", "MITOCHONDRIAL"})
+        # permissive safeguard
+        mt |= chr_norm.str.contains(r"\bMT\b", regex=True)
+        return mt.fillna(False)
+
+    if "gene_name" in var.columns:
+        syms = var["gene_name"].astype(str)
+        return (syms.str.startswith("MT-") | syms.str.startswith("mt-")).fillna(False)
+
+    return None
+
+
+def _dense_sum_axis1(X) -> np.ndarray:
+    if sparse.issparse(X):
+        return np.ravel(X.sum(axis=1))
+    return np.ravel(X.sum(axis=1))
+
+
+def _detected_genes_axis1(X) -> np.ndarray:
+    if sparse.issparse(X):
+        Xcsr = X.tocsr()
+        return np.diff(Xcsr.indptr)
+    return np.ravel((X > 0).sum(axis=1))
+
+
+def _percent(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out = 100.0 * a / np.clip(b, 1e-12, None)
+        out[np.isnan(out)] = 0.0
+    return out
+
+
+# ----------------------------
+# QC core
+# ----------------------------
+def add_qc_metrics(adata: AnnData) -> Dict[str, Any]:
+    """
+    Adds:
+      - obs['n_counts'], obs['n_genes_by_counts']
+      - obs['pct_counts_mt'] if possible
+    Returns a dict with provenance info for logging.
+    """
+    X, src = _pick_qc_matrix(adata)
+
+    if "n_counts" not in adata.obs:
+        adata.obs["n_counts"] = _dense_sum_axis1(X)
+
+    if "n_genes_by_counts" not in adata.obs:
+        adata.obs["n_genes_by_counts"] = _detected_genes_axis1(X)
+
+    mt_mask = _mt_mask_from_var(adata.var)
+    mt_status = "computed"
+    if mt_mask is None or not bool(mt_mask.any()):
+        mt_status = "skipped_no_mask"
     else:
-        # Dense dataset
-        shp = X.shape
-        dt = X.dtype.str
-        out.update(
-            {"shape": shp, "dtype": dt, "is_sparse": False, "sparse_format": None}
-        )
-        # No nnz cheaply; estimate dense bytes directly
-        out["est_dense_bytes"] = np.prod(shp) * np.dtype(X.dtype).itemsize
-        return out
+        mt_mask = mt_mask.to_numpy(dtype=bool, na_value=False)
+        if sparse.issparse(X):
+            Xc = X.tocsc()
+            mt_counts = np.ravel(Xc[:, mt_mask].sum(axis=1))
+            totals = np.ravel(Xc.sum(axis=1))
+        else:
+            mt_counts = np.ravel(X[:, mt_mask].sum(axis=1))
+            totals = np.ravel(X.sum(axis=1))
+        adata.obs["pct_counts_mt"] = _percent(mt_counts, totals)
 
-
-def summarize_anndata(
-    path: str,
-) -> Tuple[Dict[str, Any], Optional[pd.DataFrame], Optional[pd.DataFrame]]:
-    # Open file low-level
-    with h5py.File(path, "r") as h5:
-        x_desc = describe_X_lowlevel(h5)
-        obsm_keys = list(h5.get("obsm", {}).keys()) if "obsm" in h5 else []
-        varm_keys = list(h5.get("varm", {}).keys()) if "varm" in h5 else []
-        layers = list(h5.get("layers", {}).keys()) if "layers" in h5 else []
-    # Open anndata in backed mode to inspect obs/var (cheap)
-    ad_b = sc.read_h5ad(path, backed="r")
-    # Note: .obs/.var in backed mode are pandas dataframes (read fully but small)
-    obs = ad_b.obs.copy()
-    var = ad_b.var.copy()
-    shape = (ad_b.n_obs, ad_b.n_vars)
-    ad_b.file.close()  # close backed file handle promptly
-
-    # Compute suggestions
-    reg_col = choose_regulator_column(obs)
-    n_ctrl = detect_controls(obs)
-    mt_mask = suggested_mt_mask(var)
-    mt_present = mt_mask is not None
-    n_mt = int(mt_mask.sum()) if mt_present else None
-
-    summary: Dict[str, Any] = {
-        "path": path,
-        "shape": shape,
-        "X": x_desc,
-        "n_obs": int(shape[0]),
-        "n_vars": int(shape[1]),
-        "obs_columns": list(map(str, obs.columns.tolist())),
-        "var_columns": list(map(str, var.columns.tolist())),
-        "obsm_keys": obsm_keys,
-        "varm_keys": varm_keys,
-        "layers": layers,
-        "head_obs": obs.head(3).to_dict(orient="list"),
-        "head_var": var.head(3).to_dict(orient="list"),
-        "regulator_column_suggestion": reg_col,
-        "reg_col_cardinality": (int(obs[reg_col].nunique()) if reg_col else None),
-        "n_controls_detected": n_ctrl,
-        "has_var_MT": bool(mt_present),
-        "n_var_MT_true": n_mt,
-        "est_dense_size": human_bytes(x_desc.get("est_dense_bytes")),
-        "est_sparse_size": human_bytes(x_desc.get("est_sparse_bytes")),
+    return {
+        "qc_matrix_source": src,
+        "mt_detection": mt_status,
+        "var_columns": list(map(str, adata.var.columns)),
     }
-    return summary, obs, var
 
 
-def write_qc_ready_with_mt(src: str, dst: str) -> Dict[str, Any]:
-    adata = sc.read_h5ad(src)  # this will load X; only use on manageable files
-    mt = suggested_mt_mask(adata.var)
-    if mt is None:
-        raise RuntimeError(
-            "Could not infer var['MT']; no gene symbols / chromosome-like fields found."
-        )
-    adata.var["MT"] = mt.values
-    # ensure CSR to reduce memory overhead in downstream scanpy (if sparse available)
-    if hasattr(adata.X, "tocsr"):
-        adata.X = adata.X.tocsr()
-    adata.write(dst)
-    return {"wrote_qc_ready": dst, "var_MT_true": int(adata.var["MT"].sum())}
-
-
-def write_downsample(
-    src: str, dst: str, n_cells: int, seed: int = 123
+def apply_qc_filters(
+    adata: AnnData,
+    qc_cfg: Dict[str, Any],
 ) -> Dict[str, Any]:
-    # streaming-downsample: use backed read to choose indices, then load subset
-    ad_b = sc.read_h5ad(src, backed="r")
-    n = ad_b.n_obs
-    n_take = min(n_cells, n)
-    rng = np.random.default_rng(seed)
-    idx = np.sort(rng.choice(n, size=n_take, replace=False))
-    ad_b.file.close()
-    # Load subset (materialize once)
-    ad = sc.read_h5ad(src)[idx, :]
-    if hasattr(ad.X, "tocsr"):
-        ad.X = ad.X.tocsr()
-    ad.write(dst)
-    return {"wrote_sample": dst, "n_cells": int(n_take)}
+    """
+    Apply simple threshold-based filters using config keys if present:
+      qc:
+        min_counts: int
+        max_counts: int
+        min_genes: int
+        max_pct_mt: float
+    Returns summary dict and writes a boolean 'pass_qc' column.
+    """
+    obs = adata.obs
+    keep = pd.Series(True, index=obs.index)
+
+    min_counts = qc_cfg.get("min_counts", None)
+    if min_counts is not None and "n_counts" in obs:
+        keep &= obs["n_counts"] >= int(min_counts)
+
+    max_counts = qc_cfg.get("max_counts", None)
+    if max_counts is not None and "n_counts" in obs:
+        keep &= obs["n_counts"] <= int(max_counts)
+
+    min_genes = qc_cfg.get("min_genes", None)
+    if min_genes is not None and "n_genes_by_counts" in obs:
+        keep &= obs["n_genes_by_counts"] >= int(min_genes)
+
+    max_pct_mt = qc_cfg.get("max_pct_mt", None)
+    if max_pct_mt is not None and "pct_counts_mt" in obs:
+        keep &= obs["pct_counts_mt"] <= float(max_pct_mt)
+
+    adata.obs["pass_qc"] = keep.values
+
+    return {
+        "n_cells_total": int(adata.n_obs),
+        "n_cells_keep": int(keep.sum()),
+        "n_cells_drop": int((~keep).sum()),
+        "thresholds": {
+            "min_counts": min_counts,
+            "max_counts": max_counts,
+            "min_genes": min_genes,
+            "max_pct_mt": max_pct_mt,
+        },
+    }
 
 
+# ----------------------------
+# EDA plots
+# ----------------------------
+def make_qc_plots(adata: AnnData, out_dir: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Violin of standard QC metrics
+    qc_keys = [
+        k for k in ["n_counts", "n_genes_by_counts", "pct_counts_mt"] if k in adata.obs
+    ]
+    if qc_keys:
+        try:
+            sc.pl.violin(
+                adata,
+                qc_keys,
+                jitter=0.4,
+                multi_panel=True,
+                show=False,
+                save=None,
+            )
+            figpath = out_dir / "qc_violin.png"
+            sc.pl.savefig(figpath.as_posix())
+        except Exception:
+            pass
+
+    # Scatter: counts vs genes
+    if {"n_counts", "n_genes_by_counts"} <= set(adata.obs.columns):
+        try:
+            ax = sc.pl.scatter(
+                adata,
+                x="n_counts",
+                y="n_genes_by_counts",
+                color="pct_counts_mt" if "pct_counts_mt" in adata.obs else None,
+                show=False,
+                return_fig=False,
+                save=None,
+            )
+            figpath = out_dir / "qc_scatter_counts_vs_genes.png"
+            sc.pl.savefig(figpath.as_posix())
+        except Exception:
+            pass
+
+    # If you have embeddings already, add a quick UMAP colored by QC
+    if "X_umap" in adata.obsm and qc_keys:
+        for k in qc_keys:
+            try:
+                sc.pl.umap(adata, color=k, show=False, save=None)
+                figpath = out_dir / f"qc_umap_{k}.png"
+                sc.pl.savefig(figpath.as_posix())
+            except Exception:
+                pass
+
+
+# ----------------------------
+# Main
+# ----------------------------
 def main() -> None:
-    ap = argparse.ArgumentParser(
-        description="Schema & size inspection for .h5ad (no RAM blowups)."
-    )
-    ap.add_argument("--h5ad", required=True, help="Input .h5ad")
-    ap.add_argument(
-        "--out", default="h5ad_schema_summary.json", help="Write JSON summary"
-    )
-    ap.add_argument(
-        "--emit-qc-ready",
-        metavar="OUT_H5AD",
-        help="Write copy with var['MT'] added (loads X; use for manageable files)",
-    )
-    ap.add_argument(
-        "--downsample",
-        type=int,
-        default=0,
-        help="If >0, write a downsampled copy with N cells (safe for huge files)",
-    )
-    ap.add_argument(
-        "--downsample-out",
-        default="downsampled.h5ad",
-        help="Output path for --downsample",
-    )
-    args = ap.parse_args()
+    args = build_argparser().parse_args()
+    params: Dict[str, Any] = yaml.safe_load(Path(args.params).read_text())
 
-    summary, obs, var = summarize_anndata(args.h5ad)
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Actionable hints for loader/QC:
-    hints: List[str] = []
-    X = summary["X"]
-    if (
-        X["is_sparse"] is False
-        and X["est_dense_bytes"]
-        and X["est_dense_bytes"] > 16 * (1024**3)
-    ):
-        hints.append(
-            "X appears dense and very large; prefer a smaller file or convert to sparse before QC."
-        )
-    if not summary["has_var_MT"]:
-        hints.append(
-            "var['MT'] absent; add it (use --emit-qc-ready) so scanpy QC metrics work."
-        )
-    if summary["regulator_column_suggestion"] is None:
-        hints.append(
-            "No obvious regulator column; inspect obs columns with medium cardinality and set explicitly."
-        )
-    if "n_genes_by_counts" not in obs.columns or "total_counts" not in obs.columns:
-        hints.append(
-            "Typical QC columns missing; 01_qc_eda.py should compute them (OK)."
-        )
-    summary["hints"] = hints
+    # Read AnnData in-memory for QC ops
+    ad: AnnData = sc.read_h5ad(args.adata, backed=None)
 
-    with open(args.out, "w") as f:
-        json.dump(summary, f, indent=2)
-    print(json.dumps(summary, indent=2))
+    # Compute QC metrics robustly
+    qc_prov = add_qc_metrics(ad)
 
-    # Optional write-outs
-    if args.emit_qc_ready:
-        info = write_qc_ready_with_mt(args.h5ad, args.emit_qc_ready)
-        print(json.dumps(info, indent=2))
-    if args.downsample and args.downsample > 0:
-        info = write_downsample(args.h5ad, args.downsample_out, args.downsample)
-        print(json.dumps(info, indent=2))
+    # Summaries pre-filter
+    pre = {
+        "n_cells": int(ad.n_obs),
+        "n_genes": int(ad.n_vars),
+        "qc_matrix_source": qc_prov["qc_matrix_source"],
+        "mt_detection": qc_prov["mt_detection"],
+    }
+
+    # Apply filters if provided under params['qc']
+    qc_cfg = dict(params.get("qc", {}))
+    filt_summary = apply_qc_filters(ad, qc_cfg)
+
+    # Save basic summaries
+    (out_dir / "qc").mkdir(exist_ok=True, parents=True)
+    with (out_dir / "qc" / "qc_summary.json").open("w") as f:
+        json.dump(
+            {
+                "pre": pre,
+                "filters": filt_summary,
+                "var_columns": qc_prov["var_columns"],
+            },
+            f,
+            indent=2,
+        )
+
+    # Write per-cell QC TSV
+    qc_cols = [
+        c
+        for c in ["n_counts", "n_genes_by_counts", "pct_counts_mt", "pass_qc"]
+        if c in ad.obs
+    ]
+    ad.obs.loc[:, qc_cols].to_csv(out_dir / "qc" / "per_cell_qc.tsv", sep="\t")
+
+    # Make simple EDA plots
+    make_qc_plots(ad, out_dir / "figs")
+
+    # Save full (unfiltered) and filtered objects for downstream steps
+    ad.write(out_dir / "adata_qc_unfiltered.h5ad", compression="gzip")
+    if "pass_qc" in ad.obs and ad.obs["pass_qc"].any():
+        ad_filt = ad[ad.obs["pass_qc"].values].copy()
+    else:
+        # If no filters defined or all passed, keep as-is
+        ad_filt = ad.copy()
+    ad_filt.write(out_dir / "adata_qc_filtered.h5ad", compression="gzip")
+
+    # Console breadcrumbing
+    print(
+        json.dumps(
+            {
+                "loaded": str(args.adata),
+                "out": str(out_dir),
+                "qc_matrix_source": qc_prov["qc_matrix_source"],
+                "mt_detection": qc_prov["mt_detection"],
+                "cells_total": pre["n_cells"],
+                "cells_keep": filt_summary["n_cells_keep"],
+                "cells_drop": filt_summary["n_cells_drop"],
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

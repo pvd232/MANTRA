@@ -18,3 +18,8 @@ manifold:
 
 metrics:
   calib_bins: 10
+
+qc:
+  min_counts: 500
+  min_genes: 200
+  max_pct_mt: 20
