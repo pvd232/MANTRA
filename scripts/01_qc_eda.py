@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, cast
 
 import pandas as pd
+from numpy import np
 import scanpy as sc  # type: ignore
 import yaml
 
@@ -31,43 +32,33 @@ def main() -> None:
     # Load AnnData
     ad = sc.read_h5ad(args.adata).copy()
 
-    print("\n".join(list(ad.obs)))
-    print()
-    print("\n".join(list(ad.var)))
+    # --- trust existing mitopercent (must live in ad.obs) ---
+    if "mitopercent" not in ad.obs.columns:
+        raise KeyError(
+            f"'mitopercent' not found in ad.obs. Available obs columns: {list(ad.obs.columns)[:25]} ..."
+        )
 
-    conver_col = []
+    # coerce to numeric and standardize scale to [0, 100]
+    ad.obs["mitopercent"] = pd.to_numeric(ad.obs["mitopercent"], errors="coerce")
+    if ad.obs["mitopercent"].isna().any():
+        # drop rows where it's NaN (or fill if you prefer)
+        ad = ad[~ad.obs["mitopercent"].isna(), :].copy()
 
-    for col in ad.var.columns:
-        # Try converting the column to numeric
-        # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
-        numeric_col = pd.to_numeric(ad.var[col], errors="coerce")
+    # if it's in [0,1], convert to %
+    if ad.obs["mitopercent"].max() <= 1.0:
+        ad.obs["mitopercent"] = 100.0 * ad.obs["mitopercent"]
 
-        # Check if the conversion was successful and if there were non-numeric values
-        # If there were non-numeric values (resulting in NaNs), you might need to handle them
-        if numeric_col.notna().all():
-            # If all values are now numeric and the type changed, replace the original column
-            ad.var[col] = ad.var[col].astype(float)
-            ad.var[col] = ad.var[col].astype(int)
-            conver_col.append(col)
-            # print(f"Converted column '{col}' to numeric.")
-        else:
-            # Optionally, handle columns that couldn't be fully converted
-            print(
-                f"Column {col} remains as is might contain non-numeric data or already numeric."
-            )
-
-    priors = ["mean", "std", "cv", "fano", "mitopercent", "UMI_count"]
-    qc_cols = [x for x in priors if x in conver_col]
-    for col in conver_col:
-        print(f"Converted column '{col}' to numeric.")
-        print(ad.var[col])
-    for x in qc_cols:
-        print("qc", x)
-
+    X = ad.X
+    totals = np.ravel(X.sum(axis=1))
+    keep_nonzero = totals > 0
+    if not keep_nonzero.all():
+        print(
+            f"[QC] Dropping {(~keep_nonzero).sum()} zero-count cells before normalize/log"
+        )
+    ad = ad[keep_nonzero, :].copy()
     # ---- QC metrics ----
     sc.pp.calculate_qc_metrics(
         ad,
-        qc_vars=qc_cols,
         percent_top=None,
         log1p=False,
         inplace=True,
@@ -76,8 +67,11 @@ def main() -> None:
     # Filters (explicit casts for Pylance)
     min_genes = int(params["min_genes_per_cell"])
     pct_mito_max = float(params["pct_mito_max"])
-    ad = ad[ad.obs["n_genes_by_counts"] > min_genes, :]
-    ad = ad[ad.obs["mitopercent"] < pct_mito_max, :]
+
+    mask = (ad.obs["n_genes_by_counts"] > min_genes) & (
+        ad.obs["mitopercent"] < pct_mito_max
+    )
+    ad = ad[mask, :].copy()
 
     # Normalize + log + HVGs
     sc.pp.normalize_total(ad, target_sum=1e4)

@@ -104,12 +104,34 @@ make baseline # predict + metrics → yhat & metrics files
 ```
 
 ---
-Update VM git repo:
+
+## Update VM git repo:
 ```bash
 gcloud compute ssh mantra-g2 --project=mantra-477901 --zone=us-west4-a -- \                                         
   'bash -lc "
     cd ~/MANTRA
     git pull
+  "'
+```
+
+## Write over VM with GCS:
+```bash
+LOCAL_DIR="$HOME/MANTRA/data/raw/K562/essential"
+LOCAL_FILE="$LOCAL_DIR/K562_essential_normalized_singlecell_01.h5ad"
+
+GCS_URI="gs://mantra-mlfg-prod-uscentral1-8e7a/data/raw/K562/essential/K562_essential_normalized_singlecell_01.h5ad"
+
+mkdir -p "$LOCAL_DIR"
+rm -f "$LOCAL_FILE"        
+gsutil cp "$GCS_URI" "$LOCAL_FILE"
+
+echo "== GCS =="
+gsutil ls -l "$GCS_URI"         # shows size in bytes
+
+echo "== Local =="
+ls -lh "$LOCAL_FILE"            # human-readable (check it’s ~10–11 GiB)
+
+
   "'
 ```
 

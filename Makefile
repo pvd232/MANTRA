@@ -83,7 +83,7 @@ data:
 	python scripts/00_fetch_data.py --config configs/paths.yml --manifest out/interim/manifest_data.json
 
 qc:
-	python scripts/01_qc_eda.py --params configs/params.yml --out out/interim --adata data/interim/unperturbed.h5ad
+	python scripts/01_qc_eda.py --params configs/params.yml --out out/interim --adata data/raw/K562/essential/K562_essential_normalized_singlecell_01.h5ad
 
 cnmf:
 	python scripts/02_cnmf.py --params configs/params.yml --in out/interim --out out/interim
