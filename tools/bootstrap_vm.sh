@@ -3,14 +3,13 @@ set -euo pipefail
 
 log() { printf "\n[%s] %s\n" "$(date +'%F %T')" "$*"; }
 
-# -------- 0) GPU sanity (driver shows up) --------
-if ! command -v nvidia-smi >/dev/null 2>&1; then
-  # sometimes only sudo path has it
-  if ! sudo -n true 2>/dev/null; then
-    log "nvidia-smi not in PATH and no sudo; will try after driver path. Continuing..."
-  fi
+# -------- 0) GPU sanity (non-fatal) --------
+if command -v nvidia-smi >/dev/null 2>&1; then
+  nvidia-smi || true
+else
+  # might require sudo path on some images
+  sudo nvidia-smi 2>/dev/null || true
 fi
-sudo nvidia-smi || nvidia-smi || true
 
 # -------- 1) Miniconda install (idempotent) --------
 if [ ! -d "$HOME/miniconda3" ]; then
@@ -21,19 +20,19 @@ if [ ! -d "$HOME/miniconda3" ]; then
   "$HOME/miniconda3/bin/conda" init bash || true
 fi
 
-# Load conda for THIS shell
+# Load conda shell funcs for THIS process
 if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
   # shellcheck source=/dev/null
   source "$HOME/miniconda3/etc/profile.d/conda.sh"
 else
-  eval "$($HOME/miniconda3/bin/conda shell.bash hook)"
+  eval "$("$HOME/miniconda3/bin/conda" shell.bash hook)"
 fi
 
-# -------- 2) Accept Anaconda ToS once (idempotent) --------
+# -------- 2) Accept Anaconda ToS once (safe if not needed) --------
 conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || true
 conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r    || true
 
-# -------- 3) Get your repo (idempotent) --------
+# -------- 3) Get repo (idempotent) --------
 if [ ! -d "$HOME/MANTRA/.git" ]; then
   log "Cloning MANTRA..."
   git clone https://github.com/pvd232/MANTRA.git "$HOME/MANTRA"
@@ -43,73 +42,57 @@ else
   git -C "$HOME/MANTRA" reset --hard origin/main
 fi
 
-# assumes you've already created the 'mantra' conda env
-set -euo pipefail
+# -------- 4) Create/Update env from configs/env.yml (env name: venv) --------
+log "Preparing conda (mamba + strict channel priority)…"
+conda config --set channel_priority strict || true
+conda install -y -n base -c conda-forge mamba || true
 
-# Ensure we’re using conda’s shell functions (works in non-interactive scripts)
-if command -v conda >/dev/null 2>&1; then
-  eval "$(/usr/bin/env conda shell.bash hook)" || true
+ENV_FILE="$HOME/MANTRA/configs/env.yml"
+if [ ! -f "$ENV_FILE" ]; then
+  echo "ERROR: $ENV_FILE not found" >&2
+  exit 1
 fi
-
-# Prefer running inside the env via 'conda run' (avoids activation edge cases)
-PYBIN="conda run -n mantra python"
-if ! conda env list | awk '{print $1}' | grep -qx mantra; then
-  # fall back to current python if env isn't present yet
-  PYBIN="python"
-fi
-
-echo "Using interpreter: $PYBIN"
-$PYBIN - <<'PY'
-import sys, importlib, json
-mods = ["scanpy","numpy","scipy","pandas"]
-failures = {}
-for m in mods:
-    try:
-        mod = importlib.import_module(m)
-        v = getattr(mod, "__version__", "unknown")
-        print(f"[OK] {m} {v}")
-    except Exception as e:
-        failures[m] = repr(e)
-print("Python:", sys.version)
-if failures:
-    print("[ERROR] Import failures:", json.dumps(failures, indent=2))
-    raise SystemExit(1)
-PY
-echo "Python + core libs imported successfully."
-
-
-# Normalize line endings (safe & idempotent)
+# normalize CRLF just in case
 sed -i 's/\r$//' "$ENV_FILE"
 
-# Try create, then fall back to update
-conda env create -f "$ENV_FILE" || conda env update -f "$ENV_FILE" --prune
+if conda env list | awk '{print $1}' | grep -qx venv; then
+  log "Env 'venv' exists → updating with --prune"
+  (command -v mamba >/dev/null && mamba env update -n venv -f "$ENV_FILE" --prune) || \
+  conda env update -n venv -f "$ENV_FILE" --prune
+else
+  log "Creating env 'venv' from $ENV_FILE"
+  (command -v mamba >/dev/null && mamba env create -n venv -f "$ENV_FILE") || \
+  conda env create -n venv -f "$ENV_FILE"
+fi
 
-# -------- 5) Activate & verify CUDA --------
-
-export MKL_INTERFACE_LAYER="${MKL_INTERFACE_LAYER:-GNU,LP64}"
-export MKL_THREADING_LAYER="${MKL_THREADING_LAYER:-INTEL}"
-
-log "Activating env 'mantra' and checking PyTorch/CUDA..."
-conda activate mantra
-
-python - <<'PY'
-import torch, sys
-print("Torch version:", getattr(torch, "__version__", "unknown"))
-cuda = torch.cuda.is_available()
-print("CUDA available:", cuda)
-if cuda:
-    print("Device count:", torch.cuda.device_count())
-    print("Device 0:", torch.cuda.get_device_name(0))
-else:
-    sys.exit(2)  # helps surface "no CUDA" clearly
+# -------- 5) Sanity imports via conda-run (no activation assumptions) --------
+log "Verifying core packages in env 'venv'…"
+conda run -n venv python - <<'PY'
+import sys, importlib
+mods = ["scanpy","numpy","scipy","pandas"]
+for m in mods:
+    mod = importlib.import_module(m)
+    print(f"[OK] {m} {getattr(mod,'__version__','?')}")
+print("Python:", sys.version)
 PY
 
-# Driver sanity (again) — not fatal if needs sudo
-sudo nvidia-smi || nvidia-smi || true
+# -------- 6) Optional CUDA/Torch probe (non-fatal) --------
+log "Torch/CUDA check (non-fatal)…"
+conda run -n venv python - <<'PY'
+try:
+    import torch
+    print("torch:", getattr(torch,"__version__","?"),
+          "cuda:", torch.cuda.is_available())
+    if torch.cuda.is_available():
+        print("device_count:", torch.cuda.device_count())
+        print("device_0:", torch.cuda.get_device_name(0))
+except Exception as e:
+    print("torch check skipped/failed:", e)
+PY
 
-# -------- 6) System deps for data downloads --------
-# aria2 speeds up/robustifies large Figshare downloads (fallbacks to curl if absent)
+# -------- 7) System deps for downloads (idempotent) --------
 if ! command -v aria2c >/dev/null 2>&1; then
+  log "Installing aria2 for robust downloads…"
   sudo apt-get update -y && sudo apt-get install -y aria2
 fi
 

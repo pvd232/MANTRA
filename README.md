@@ -89,7 +89,7 @@ mypy.ini
 
 ```bash
 conda env create -f configs/env.yml
-conda activate mantra
+conda activate venv
 make all  # or run targets below
 ```
 

@@ -76,7 +76,7 @@ vm.ssh:
 
 vm.cuda:
 	gcloud compute ssh $(REMOTE) -- \
-	  'bash -lc "source ~/miniconda3/etc/profile.d/conda.sh && conda activate mantra && \
+	  'bash -lc "source ~/miniconda3/etc/profile.d/conda.sh && conda activate venv && \
 	    echo \"== nvidia-smi ==\" && (nvidia-smi || sudo nvidia-smi || true) && \
 	    echo \"== PyTorch CUDA check ==\" && python - <<'\''PY'\''
 import torch
@@ -90,7 +90,7 @@ PY"'
 PIPELINE ?= all
 vm.run:
 	gcloud compute ssh $(REMOTE) -- \
-	  'bash -lc "source ~/miniconda3/etc/profile.d/conda.sh && conda activate mantra && cd ~/MANTRA && make $(PIPELINE)"'
+	  'bash -lc "source ~/miniconda3/etc/profile.d/conda.sh && conda activate venv && cd ~/MANTRA && make $(PIPELINE)"'
 
 # -------------------------
 # LOCAL pipeline (your original targets — unchanged)
