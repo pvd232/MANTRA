@@ -31,7 +31,7 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Load AnnData
-    ad = sc.read_h5ad(args.adata, backed="w").copy()
+    ad = sc.read_h5ad(args.adata, backed="r").copy()
     print("ad", ad)
     print("ad.obs", ad.obs)
     print()
