@@ -55,31 +55,32 @@ def main() -> None:
     #         f"o col: {col}, type: {ad.var[f"{col}"].dtype} realType {type(ad.var[f"{col}"])}"
     #     )
     # ad.X = ad.X.astype(int)
+    conver_col = []
 
     for col in ad.var.columns:
         # Try converting the column to numeric
         # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
         numeric_col = pd.to_numeric(ad.var[col], errors="coerce")
-        print("pre num")
-        print("numeric_col", numeric_col)
+        # print("pre num")
+        # print("numeric_col", numeric_col)
 
         # Check if the conversion was successful and if there were non-numeric values
         # If there were non-numeric values (resulting in NaNs), you might need to handle them
         if numeric_col.notna().all():
             # If all values are now numeric and the type changed, replace the original column
             ad.var[col] = numeric_col
-            print(f"Converted column '{col}' to numeric.")
+            conver_col.append(col)
+            # print(f"Converted column '{col}' to numeric.")
         else:
             # Optionally, handle columns that couldn't be fully converted
             print(
                 f"Column {col} remains as is (might contain non-numeric data or already numeric."
             )
-    conver_col = []
     for col in ad.obs.columns:
         # Try converting the column to numeric
         # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
         numeric_col = pd.to_numeric(ad.obs[col], errors="coerce")
-        conver_col.append(numeric_col)
+        # conver_col.append(numeric_col)
         # print(f"Converted column '{col}' to numeric.")
 
         # print("numeric_col 2", numeric_col)
@@ -89,7 +90,7 @@ def main() -> None:
         if numeric_col.notna().all():
             # If all values are now numeric and the type changed, replace the original column
             ad.obs[col] = numeric_col
-            conver_col.append(numeric_col)
+            conver_col.append(col)
 
             # print(f"Converted column '{col}' to numeric.")
         else:
