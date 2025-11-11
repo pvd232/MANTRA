@@ -36,8 +36,8 @@ def main() -> None:
     for col in ad.obs:
         print("o col: ", col)
         print(type(col))
-        print("o col val: ", ad.var[f"{col}"])
-        print("o val: ", ad.var[f"{col}"].dtype)
+        print("o col val: ", ad.obs[f"{col}"])
+        print("o val: ", ad.obs[f"{col}"].dtype)
     for col in ad.var:
         print("col: ", col)
         print(type(col))
