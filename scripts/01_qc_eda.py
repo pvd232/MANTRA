@@ -53,7 +53,7 @@ def main() -> None:
         else:
             # Optionally, handle columns that couldn't be fully converted
             print(
-                f"Column {col} remains as is (might contain non-numeric data or already numeric."
+                f"Column {col} remains as is might contain non-numeric data or already numeric."
             )
 
     priors = ["mean", "std", "cv", "fano", "mitopercent", "UMI_count"]
