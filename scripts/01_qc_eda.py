@@ -60,6 +60,7 @@ def main() -> None:
         # Try converting the column to numeric
         # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
         numeric_col = pd.to_numeric(ad.var[col], errors="coerce")
+        print("numeric_col", numeric_col)
 
         # Check if the conversion was successful and if there were non-numeric values
         # If there were non-numeric values (resulting in NaNs), you might need to handle them
