@@ -102,6 +102,7 @@ def main() -> None:
     qc_cols = [x for x in priors if x in conver_col]
     for col in conver_col:
         print(f"Converted column '{col}' to numeric.")
+        print(ad.var[col])
     for x in qc_cols:
         print("qc", x)
 
