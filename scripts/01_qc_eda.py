@@ -32,17 +32,21 @@ def main() -> None:
 
     # Load AnnData
     ad = sc.read_h5ad(args.adata, backed="r")
-
-    for col in ad.obs:
-        print("o col: ", col)
-        print(type(col))
-        print("o col val: ", ad.obs[f"{col}"])
-        print("o val: ", ad.obs[f"{col}"].dtype)
-    for col in ad.var:
-        print("col: ", col)
-        print(type(col))
-        # print("dtype: ", ad.var["dtype"])
-        print("val: ", ad.var[f"{col}"].dtype)
+    ad.obs
+    print("ad.obs", ad.obs)
+    print()
+    print("ad.var", ad.var)
+    print()
+    # for col in ad.obs:
+    #     print("o col: ", col)
+    #     print(type(col))
+    #     print("o col val: ", ad.obs[f"{col}"])
+    #     print("o val: ", ad.obs[f"{col}"].dtype)
+    # for col in ad.var:
+    #     print("col: ", col)
+    #     print(type(col))
+    #     # print("dtype: ", ad.var["dtype"])
+    #     print("val: ", ad.var[f"{col}"].dtype)
 
     # Option 1: If all values are valid integers (e.g., "1", "2")
     try:
