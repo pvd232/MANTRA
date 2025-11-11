@@ -11,11 +11,14 @@ set -euo pipefail
 
 # Optional: pick downloader (aria2c if installed, else curl)
 DOWNLOADER=""
+# --- replace with this ---
 if command -v aria2c >/dev/null 2>&1; then
-  DOWNLOADER="aria2c --check-integrity=false --continue=true -x16 -s16 --retry-wait=2 --max-tries=${RETRIES} -d \"${WORKDIR}\" -o"
+  # single connection, robust resume; figshare presigned redirects can be touchy with multi-part
+  DOWNLOADER="aria2c --check-integrity=false --continue=true -x1 -s1 --retry-wait=3 --max-tries=${RETRIES} -d \"${WORKDIR}\" -o"
 else
-  DOWNLOADER="curl -L --retry ${RETRIES} --retry-connrefused --retry-delay 2 -C - -o"
+  DOWNLOADER="curl -L --retry ${RETRIES} --retry-connrefused --retry-delay 3 -C - -o"
 fi
+
 
 mkdir -p "${WORKDIR}"
 
@@ -67,13 +70,14 @@ download_one() {
   local dest_local="${WORKDIR}/$(basename "${rel}")"
   local dest_gs="gs://${BUCKET}/${PREFIX}/${rel}"
 
-  echo "==> Fetch: ${url}"
-  # shellcheck disable=SC2086
-  eval ${DOWNLOADER} "\"${dest_local}\"" "\"${url}\""
+   echo "==> Fetch: ${url}"
+  # aria2c/curl -o MUST be a filename, not a full path with directories repeated
+  filename="$(basename "${rel}")"
 
-  if [[ -n "${sha}" ]]; then
-    echo "==> Verify sha256: ${dest_local}"
-    printf "%s  %s\n" "${sha}" "${dest_local}" | sha256sum -c -
+  # shellcheck disable=SC2086
+  if ! eval ${DOWNLOADER} "\"${filename}\"" "\"${url}\""; then
+    echo "   aria2/curl primary attempt failed; retrying once with curl single-stream..."
+    curl -L --retry ${RETRIES} --retry-connrefused --retry-delay 3 -C - -o "${dest_local}" "${url}"
   fi
 
   echo "==> Upload: ${dest_local} -> ${dest_gs}"

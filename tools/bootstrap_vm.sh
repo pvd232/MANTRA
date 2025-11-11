@@ -57,6 +57,10 @@ sed -i 's/\r$//' "$ENV_FILE"
 conda env create -f "$ENV_FILE" || conda env update -f "$ENV_FILE" --prune
 
 # -------- 5) Activate & verify CUDA --------
+
+export MKL_INTERFACE_LAYER="${MKL_INTERFACE_LAYER:-GNU,LP64}"
+export MKL_THREADING_LAYER="${MKL_THREADING_LAYER:-INTEL}"
+
 log "Activating env 'mantra' and checking PyTorch/CUDA..."
 conda activate mantra
 
