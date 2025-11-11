@@ -32,11 +32,11 @@ def main() -> None:
 
     # Load AnnData
     ad = sc.read_h5ad(args.adata).copy()
-    print("ad", ad)
-    print("ad.obs", ad.obs)
-    print()
-    print("ad.var", ad.var)
-    print()
+    # print("ad", ad)
+    # print("ad.obs", ad.obs)
+    # print()
+    # print("ad.var", ad.var)
+    # print()
     # return
 
     print("\n".join(list(ad.obs)))
