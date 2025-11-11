@@ -68,7 +68,7 @@ def main() -> None:
         # If there were non-numeric values (resulting in NaNs), you might need to handle them
         if numeric_col.notna().all():
             # If all values are now numeric and the type changed, replace the original column
-            ad.var[col] = numeric_col
+            ad.var[col] = int(numeric_col)
             conver_col.append(col)
             # print(f"Converted column '{col}' to numeric.")
         else:
