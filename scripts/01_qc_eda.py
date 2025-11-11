@@ -24,14 +24,18 @@ def build_argparser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_argparser().parse_args()
     params: Dict[str, Any] = yaml.safe_load(Path(args.params).read_text())
-    for key in params.keys():
-        print("key", key)
+    # for key in params.keys():
+    #     print("key", key)
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Load AnnData
     ad = sc.read_h5ad(args.adata, backed="r")
+    for col in ad.var:
+        print("col: ", col)
+        print(type(col))
+        print("val: ", ad.var[f"{col}"])
 
     # ---- QC metrics ----
     sc.pp.calculate_qc_metrics(
