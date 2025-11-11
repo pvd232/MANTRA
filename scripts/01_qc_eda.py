@@ -54,7 +54,7 @@ def main() -> None:
     #     print(
     #         f"o col: {col}, type: {ad.var[f"{col}"].dtype} realType {type(ad.var[f"{col}"])}"
     #     )
-    ad.X = ad.X.astype(int)
+    # ad.X = ad.X.astype(int)
 
     for col in ad.var.columns:
         # Try converting the column to numeric
@@ -74,23 +74,34 @@ def main() -> None:
             print(
                 f"Column {col} remains as is (might contain non-numeric data or already numeric."
             )
+    conver_col = []
     for col in ad.obs.columns:
         # Try converting the column to numeric
         # 'errors="coerce"' will turn any non-numeric values into NaN (Not a Number)
         numeric_col = pd.to_numeric(ad.obs[col], errors="coerce")
-        print("numeric_col 2", numeric_col)
+        conver_col.append(numeric_col)
+        # print(f"Converted column '{col}' to numeric.")
+
+        # print("numeric_col 2", numeric_col)
 
         # Check if the conversion was successful and if there were non-numeric values
         # If there were non-numeric values (resulting in NaNs), you might need to handle them
-        if numeric_col.notna().all() and not numeric_col.equals(ad.obs[col]):
+        if numeric_col.notna().all():
             # If all values are now numeric and the type changed, replace the original column
             ad.obs[col] = numeric_col
-            print(f"Converted column '{col}' to numeric.")
+            conver_col.append(numeric_col)
+
+            # print(f"Converted column '{col}' to numeric.")
         else:
             # Optionally, handle columns that couldn't be fully converted
             print(
                 f"Column {col} remains as is (might contain non-numeric data or already numeric."
             )
+    priors = ["mean", "std", "cv", "fano", "mitopercent", "UMI_count"]
+    tot = [x for x in priors if x in conver_col]
+    for col in conver_col:
+        print(f"Converted column '{col}' to numeric.")
+    qc_cols = [x for x in tot]
     # print(type(col))
     # print("dtype: ", ad.var["dtype"])
     #     print("val: ", ad.var[f"{col}"].dtype)
@@ -104,7 +115,7 @@ def main() -> None:
     # ---- QC metrics ----
     sc.pp.calculate_qc_metrics(
         ad,
-        qc_vars=["mean", "std", "cv", "fano", "mitopercent", "UMI_count"],
+        qc_vars=qc_cols,
         percent_top=None,
         log1p=False,
         inplace=True,
