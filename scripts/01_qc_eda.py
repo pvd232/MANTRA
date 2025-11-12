@@ -98,15 +98,32 @@ def main() -> None:
     )
     ad = ad[mask, :].copy()
 
-    # Normalize + log + HVGs
-    sc.pp.normalize_total(ad, target_sum=1e4)
-    sc.pp.log1p(ad)
-    sc.pp.highly_variable_genes(
-        ad, n_top_genes=int(params["hvg_n_top_genes"]), flavor="seurat_v3"
+    # --- decide whether we can/should normalize+log
+    has_log1p_flag = bool(ad.uns.get("log1p"))
+    xmin = (
+        ad.X.data.min()
+        if sparse.issparse(ad.X) and ad.X.data.size
+        else (float(np.min(ad.X)) if (not sparse.issparse(ad.X) and ad.X.size) else 0.0)
     )
 
-    # Decide HVG flavor from counts, not from ad.X
-    def is_integer_like_matrix(M) -> bool:
+    do_norm_log = (
+        (not has_log1p_flag) and (xmin >= 0.0) and (counts_src != "X (fallback)")
+    )
+    if do_norm_log:
+        sc.pp.normalize_total(ad, target_sum=1e4)
+        sc.pp.log1p(ad)
+    else:
+        reason = []
+        if has_log1p_flag:
+            reason.append("log1p flag present")
+        if xmin < 0.0:
+            reason.append(f"min(X)={xmin} < 0")
+        if counts_src == "X (fallback)":
+            reason.append("no raw counts; X looks normalized")
+        print(f"[QC] Skipping normalize/log ({'; '.join(reason) or 'policy'})")
+
+    # --- HVG flavor: only use v3 if counts are integer-like AND not fallback
+    def is_integer_like_matrix(M):
         data = M.data if sparse.issparse(M) else np.ravel(M)
         return (
             data.size > 0
@@ -114,30 +131,46 @@ def main() -> None:
             and np.allclose(data, np.round(data), atol=1e-8)
         )
 
-    hvg_flavor = "seurat_v3" if is_integer_like_matrix(X_counts) else "seurat"
-    print(f"[HVG] Using flavor={hvg_flavor}")
+    print("-1")
+
+    use_v3 = (counts_src != "X (fallback)") and is_integer_like_matrix(X_counts)
+
+    flavor = "seurat_v3" if use_v3 else "seurat"
+
+    print(f"[HVG] Using flavor={flavor}")
 
     sc.pp.highly_variable_genes(
-        ad, n_top_genes=int(params["hvg_n_top_genes"]), flavor=hvg_flavor
+        ad, n_top_genes=int(params["hvg_n_top_genes"]), flavor=flavor
     )
 
     # Persist QC’d AnnData for downstream steps
     Path("data/interim").mkdir(parents=True, exist_ok=True)
+    print("-2")
+
     ad.write_h5ad("data/interim/unperturbed_qc.h5ad")
 
+    print("1")
     obs_df: pd.DataFrame = cast(pd.DataFrame, ad.obs)
     candidate_cols = ["n_counts", "n_genes_by_counts", "pct_counts_mt"]
     cols: list[str] = [c for c in candidate_cols if c in obs_df.columns]
+    print("2")
+
     obs_num: pd.DataFrame = obs_df[cols].apply(pd.to_numeric, errors="coerce").copy() # type: ignore
+    print("3")
 
     qc_summary: pd.DataFrame = obs_num.describe()
     qc_summary.to_csv(out_dir / "qc_summary.csv")
+    print("4")
 
     # ---- Plots ----
     if cols:
         sc.settings.figdir = str(out_dir)
+        print("5")
+
         sc.pl.violin(ad, cols, show=False, save="_qc_violin.png")  # type: ignore
         sc.pl.highly_variable_genes(ad, show=False, save="_hvg.png")
+
+    print("6")
 
     # ---- Manifest ----
     manifest: Dict[str, Any] = {
