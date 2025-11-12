@@ -76,12 +76,7 @@ def main() -> None:
         counts_src = "raw.X"
     else:
         X_counts = ad.X
-        # print("ad cnt", ad.X.count())
         print("X_counts", X_counts)
-        # raise RuntimeError(
-        #     "Raw counts not found. Use replogle_counts.h5ad (has integer-like counts)."
-        # )
-    print(f"[QC] Using {counts_src} as counts source")
 
     # Drop zero-count cells (on counts source)
     totals = np.ravel(X_counts.sum(axis=1))
