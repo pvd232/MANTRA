@@ -69,6 +69,18 @@ def main() -> None:
         ad = ad[keep, :].copy()
         X_counts = X_counts[keep, :]
 
+    # --- make ad.X safe to operate on (CSR + no NaNs)
+    ad.X = ad.X.tocsr() if sparse.issparse(ad.X) else ad.X
+    if sparse.issparse(ad.X):
+        d = ad.X.data
+        if np.isnan(d).any():
+            print("[QC] Found NaNs in X → setting NaNs to 0")
+            d[np.isnan(d)] = 0.0
+    else:
+        if np.isnan(ad.X).any():
+            print("[QC] Found NaNs in dense X → setting NaNs to 0")
+            ad.X = np.nan_to_num(ad.X, nan=0.0)
+
     # ---- QC metrics ----
     sc.pp.calculate_qc_metrics(
         ad,
