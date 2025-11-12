@@ -5,7 +5,7 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
@@ -13,6 +13,7 @@ import scanpy as sc  # type: ignore
 from scipy import sparse
 import subprocess
 import yaml
+import matplotlib.pyplot as plt
 
 
 def build_argparser() -> argparse.ArgumentParser:
@@ -36,6 +37,40 @@ def build_argparser() -> argparse.ArgumentParser:
         help="Max cells to plot (subsample if larger)",
     )
     return ap
+
+
+def _try_gsutil_cp(paths: List[Path], gs_prefix: str) -> Dict[str, List[str]]:
+    """
+    Try to 'gsutil cp' each file. Always keep local copies.
+    Returns a dict with 'uploaded' and 'failed' lists of basenames.
+    """
+    results = {"uploaded": [], "failed": []}
+    gs_prefix = gs_prefix.rstrip("/")
+
+    for p in paths:
+        try:
+            # Use -n so we don't overwrite; capture output for debugging
+            proc = subprocess.run(
+                ["gsutil", "-m", "cp", "-n", str(p), f"{gs_prefix}/"],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            if proc.returncode == 0:
+                results["uploaded"].append(p.name)
+            else:
+                # Do not raise; we want to keep going and keep files local.
+                results["failed"].append(p.name)
+                print(f"[report] upload failed for {p.name}:\n{proc.stderr.strip()}")
+        except FileNotFoundError:
+            # gsutil not installed
+            results["failed"].append(p.name)
+            print("[report] 'gsutil' not found on PATH; keeping file locally:", p.name)
+        except Exception as e:
+            results["failed"].append(p.name)
+            print(f"[report] unexpected error uploading {p.name}: {e}")
+    return results
 
 
 def main() -> None:
@@ -168,26 +203,12 @@ def main() -> None:
     ad.write_h5ad("data/interim/unperturbed_qc.h5ad")
 
     # ---- reporting (optional) ----
-    def _maybe_upload(paths, gs_prefix: str | None):
-        if not gs_prefix:
-            return
-        gs_prefix = gs_prefix.rstrip("/")
-        for p in paths:
-            try:
-                subprocess.run(
-                    ["gsutil", "-m", "cp", "-n", str(p), f"{gs_prefix}/"],
-                    check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-            except Exception as e:
-                print(f"[report] upload failed for {p}: {e}")
-
-    report_files: list[Path] = []
+    report_files: List[Path] = []
     if args.report:
         out_dir = Path(args.out)
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        # QC summary CSV
         obs_cols = [
             c
             for c in ["n_counts", "n_genes_by_counts", "mitopercent", "pct_counts_mt"]
@@ -201,6 +222,7 @@ def main() -> None:
             qc_summary.to_csv(qc_csv)
             report_files.append(qc_csv)
 
+        # Manifest JSON
         manifest = {
             "git": os.popen("git rev-parse --short HEAD").read().strip(),
             "input": os.path.abspath(args.adata),
@@ -218,6 +240,7 @@ def main() -> None:
         man_json.write_text(json.dumps(manifest, indent=2))
         report_files.append(man_json)
 
+        # Subsample for plotting
         nmax = int(args.plot_max_cells)
         if ad.n_obs > nmax:
             rng = np.random.default_rng(0)
@@ -227,21 +250,53 @@ def main() -> None:
         else:
             ad_plot = ad
 
-        sc.settings.figdir = str(out_dir)
-        cols = [
-            c
-            for c in ["n_counts", "n_genes_by_counts", "mitopercent", "pct_counts_mt"]
-            if c in ad_plot.obs
-        ]
-        if cols:
-            sc.pl.violin(ad_plot, cols, show=False, save="_qc_violin.png")
-            report_files.append(out_dir / "qc_violin.png")
-        if "highly_variable" in ad.var.columns:
-            sc.pl.highly_variable_genes(ad_plot, show=False, save="_hvg.png")
-            report_files.append(out_dir / "hvg.png")
+        # PCA/Neighbors/UMAP if needed for nicer violins ordering later (optional)
+        if "X_pca" not in ad_plot.obsm:
+            sc.pp.scale(ad_plot, max_value=10)
+            sc.tl.pca(ad_plot, svd_solver="arpack")
 
+        # ---- Figures (ALWAYS saved locally first) ----
+        # 1) QC violin
+        qc_png = out_dir / "qc_violin.png"
+        try:
+            sc.pl.violin(
+                ad_plot,
+                keys=["n_counts", "n_genes_by_counts", "mitopercent"],
+                jitter=0.4,
+                multi_panel=True,
+                show=False,
+                save=None,
+            )
+            plt.savefig(qc_png, bbox_inches="tight", dpi=160)
+            plt.close()
+            report_files.append(qc_png)
+        except Exception as e:
+            print(f"[plot] violin failed: {e}")
+
+        # 2) HVG overview
+        hvg_png = out_dir / "hvg.png"
+        try:
+            sc.pl.highly_variable_genes(ad_plot, show=False, save=None)
+            plt.savefig(hvg_png, bbox_inches="tight", dpi=160)
+            plt.close()
+            report_files.append(hvg_png)
+        except Exception as e:
+            print(f"[plot] hvg plot failed: {e}")
+
+        print(f"[report] wrote locally: {[p.name for p in report_files]}")
+
+        # ---- Optional GCS upload (AFTER local writes) ----
         if args.report_to_gcs:
-            _maybe_upload(report_files, args.report_to_gcs)
+            results = _try_gsutil_cp(report_files, args.report_to_gcs)
+            if results["uploaded"]:
+                print("[report] uploaded to GCS:", ", ".join(results["uploaded"]))
+            if results["failed"]:
+                print(
+                    "[report] kept local copies for (upload failed):",
+                    ", ".join(results["failed"]),
+                )
+        else:
+            print("[report] no --report-to-gcs provided; keeping local files only.")
 
 
 if __name__ == "__main__":
