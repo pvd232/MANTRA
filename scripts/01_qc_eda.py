@@ -63,12 +63,11 @@ def main() -> None:
     print(f"[QC] Using {counts_src} as counts source")
 
     totals = np.ravel(X_counts.sum(axis=1))
-    keep_nonzero = totals > 0
-    if not keep_nonzero.all():
-        print(
-            f"[QC] Dropping {(~keep_nonzero).sum()} zero-count cells before normalize/log"
-        )
-    ad = ad[keep_nonzero, :].copy()
+    keep = totals > 0
+    if not keep.all():
+        print(f"[QC] Dropping {(~keep).sum()} zero-count cells before normalize/log")
+        ad = ad[keep, :].copy()
+        X_counts = X_counts[keep, :]
 
     # ---- QC metrics ----
     sc.pp.calculate_qc_metrics(
