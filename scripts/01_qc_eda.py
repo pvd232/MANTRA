@@ -76,7 +76,7 @@ def main() -> None:
         counts_src = "raw.X"
     else:
         X_counts = ad.X
-        print("ad cnt", ad.X.count())
+        # print("ad cnt", ad.X.count())
         print("X_counts", X_counts)
         # raise RuntimeError(
         #     "Raw counts not found. Use replogle_counts.h5ad (has integer-like counts)."
