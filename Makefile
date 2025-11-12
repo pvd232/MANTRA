@@ -125,15 +125,17 @@ data.download:
 		WORKDIR=\$$HOME/tmp_downloads \
 		~/download_data.sh"'
 
+# Usage: make vm.fig.get URL="https://plus.figshare.com/ndownloader/files/35775606" OUT="data/raw/K562_gwps"
+# Optional: GCS_PREFIX="gs://my-bucket/data/raw"
+
 .PHONY: vm.fig.get
 vm.fig.get:
-	$(GCLOUD) compute scp tools/dl_fig.sh "$(VM):~/dl_fig.sh" \
-	  --project="$(PROJECT)" --zone="$(ZONE)"
+	$(GCLOUD) compute scp tools/dl_fig.sh "$(VM):~/dl_fig.sh" --project="$(PROJECT)" --zone="$(ZONE)"
 	$(GCLOUD) compute ssh $(REMOTE) -- 'bash -lc "\
 	  chmod +x ~/dl_fig.sh && \
-	  OUT=\$$HOME/MANTRA/data/raw && \
-	  mkdir -p $$OUT && \
-	  ~/dl_fig.sh \"$(URL)\" $$OUT gs://$(BUCKET)/data/raw"'
+	  OUT=\$$HOME/MANTRA/$(OUT); \
+	  mkdir -p \"\$$OUT\" && \
+	  ~/dl_fig.sh \"$(URL)\" \"\$$OUT\" \"$(if $(GCS_PREFIX),$(GCS_PREFIX),gs://$(BUCKET)/data/raw)\" "'
 
 
 vm.ensure_dirs:
