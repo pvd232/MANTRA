@@ -128,10 +128,10 @@ data.download:
 .PHONY: vm.fig.get
 # Usage: make vm.fig.get URL="https://plus.figshare.com/ndownloader/files/35775606" OUT="K562_gwps/rpe1_raw_singlecell_01.h5ad"
 vm.fig.get:
-	$(GCLOUD) compute scp tools/dl_one.sh "$(VM):~/dl_one.sh" --project="$(PROJECT)" --zone="$(ZONE)"
+	$(GCLOUD) compute scp tools/dl_fig.sh "$(VM):~/dl_fig.sh" --project="$(PROJECT)" --zone="$(ZONE)"
 	$(GCLOUD) compute ssh $(REMOTE) -- 'bash -lc "\
-	  chmod +x ~/dl_one.sh && \
-	  ~/dl_one.sh \"$(URL)\" \"$(OUT)\" --bucket \"$(BUCKET)\" --prefix data/raw"'
+	  chmod +x ~/dl_fig.sh && \
+	  ~/dl_fig.sh \"$(URL)\" \"$(OUT)\" --bucket \"$(BUCKET)\" --prefix data/raw"'
 
 
 vm.ensure_dirs:
