@@ -16,7 +16,8 @@ set -euo pipefail
 
 SRC="${1:?need GCS src (e.g., gs://bucket/path or gs://bucket/prefix/) }"
 DEST="${2:?need local dest dir (e.g., ./data/raw)}"
-shift 2 || true
+shift 2 || {
+  }
 
 ONLY_MISSING=0
 SYNC=0

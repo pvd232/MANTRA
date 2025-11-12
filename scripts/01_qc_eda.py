@@ -52,6 +52,8 @@ def main() -> None:
 
     # --- subset to UNPERTURBED cells (adjust column names as needed) ---
     obs_lower = ad.obs.columns.str.lower()
+    for c in obs_lower:
+        print("c", c)
     if any(c in obs_lower for c in ["guide", "sgrna", "target", "is_perturbed"]):
         col = [
             c
@@ -73,9 +75,12 @@ def main() -> None:
         X_counts = ad.raw.X
         counts_src = "raw.X"
     else:
-        raise RuntimeError(
-            "Raw counts not found. Use replogle_counts.h5ad (has integer-like counts)."
-        )
+        X_counts = ad.X
+        print("ad cnt", ad.X.count())
+        print("X_counts", X_counts)
+        # raise RuntimeError(
+        #     "Raw counts not found. Use replogle_counts.h5ad (has integer-like counts)."
+        # )
     print(f"[QC] Using {counts_src} as counts source")
 
     # Drop zero-count cells (on counts source)
