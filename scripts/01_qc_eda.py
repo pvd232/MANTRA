@@ -5,7 +5,7 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, cast
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
@@ -20,7 +20,6 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--params", required=True, help="configs/params.yml")
     ap.add_argument("--out", required=True, help="out/interim")
     ap.add_argument("--adata", required=True, help="path to unperturbed .h5ad")
-    # reporting (you referenced these—now they exist)
     ap.add_argument(
         "--report", action="store_true", help="emit qc_summary, plots, manifest"
     )
@@ -52,8 +51,6 @@ def main() -> None:
 
     # --- subset to UNPERTURBED cells (adjust column names as needed) ---
     obs_lower = ad.obs.columns.str.lower()
-    for c in obs_lower:
-        print("c", c)
     if any(c in obs_lower for c in ["guide", "sgrna", "target", "is_perturbed"]):
         col = [
             c
@@ -67,7 +64,7 @@ def main() -> None:
         print(f"[subset] keeping {int(unpert_mask.sum())} unperturbed of {ad.n_obs}")
         ad = ad[unpert_mask, :].copy()
 
-    # --- choose the counts matrix (required for Seurat v3) ---
+    # --- choose the counts matrix (prefer true counts) ---
     if "counts" in (ad.layers or {}):
         X_counts = ad.layers["counts"]
         counts_src = "layers['counts']"
@@ -76,15 +73,30 @@ def main() -> None:
         counts_src = "raw.X"
     else:
         X_counts = ad.X
-        print("X_counts", X_counts)
+        counts_src = "X (assumed counts)"
+    print(f"[QC] Using {counts_src} as counts source")
 
-    # Drop zero-count cells (on counts source)
+    # Drop zero-count cells
     totals = np.ravel(X_counts.sum(axis=1))
     keep = totals > 0
     if not keep.all():
         print(f"[QC] Dropping {(~keep).sum()} zero-count cells before normalize/log")
         ad = ad[keep, :].copy()
         X_counts = X_counts[keep, :]
+
+    # Ensure basic QC columns from your schema
+    # n_counts from totals / umi_count if present
+    if "umi_count" in ad.obs.columns:
+        ad.obs["n_counts"] = pd.to_numeric(ad.obs["umi_count"], errors="coerce")
+    else:
+        ad.obs["n_counts"] = totals
+
+    # n_genes_by_counts if missing
+    if "n_genes_by_counts" not in ad.obs.columns:
+        if sparse.issparse(X_counts):
+            ad.obs["n_genes_by_counts"] = (X_counts > 0).sum(axis=1).A1
+        else:
+            ad.obs["n_genes_by_counts"] = (np.asarray(X_counts) > 0).sum(axis=1)
 
     # ---- mito percent ----
     if "mitopercent" not in ad.obs:
@@ -100,7 +112,6 @@ def main() -> None:
             mt_mask = var["gene_name"].astype(str).str.upper().str.startswith("MT-")
         if mt_mask is None:
             mt_mask = pd.Series(False, index=var.index)
-
         sc.pp.calculate_qc_metrics(
             ad,
             qc_vars={"mito": mt_mask.values},
@@ -124,10 +135,16 @@ def main() -> None:
     mask = (ad.obs["n_genes_by_counts"] > min_genes) & (
         ad.obs["mitopercent"] < pct_mito_max
     )
+    print(f"[filter] keep {int(mask.sum())}/{ad.n_obs} cells after thresholds")
     ad = ad[mask, :].copy()
+    X_counts = (
+        X_counts[mask, :]
+        if sparse.issparse(X_counts)
+        else np.asarray(X_counts)[mask, :]
+    )
 
     # ---- normalize/log on counts ----
-    ad.X = X_counts  # ensure working on counts
+    ad.X = X_counts
     sc.pp.normalize_total(ad, target_sum=1e4)
     sc.pp.log1p(ad)
 
@@ -140,8 +157,6 @@ def main() -> None:
             and np.allclose(data, np.round(data), atol=1e-8)
         )
 
-    # We already used log1p on counts; the integer-likeness should be checked pre-log.
-    # Use the counts source check instead of ad.X (now log1p).
     flavor = "seurat_v3" if is_integer_like_matrix(X_counts) else "seurat"
     print(f"[HVG] Using flavor={flavor}")
     sc.pp.highly_variable_genes(
@@ -173,7 +188,6 @@ def main() -> None:
         out_dir = Path(args.out)
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        # qc_summary.csv
         obs_cols = [
             c
             for c in ["n_counts", "n_genes_by_counts", "mitopercent", "pct_counts_mt"]
@@ -187,7 +201,6 @@ def main() -> None:
             qc_summary.to_csv(qc_csv)
             report_files.append(qc_csv)
 
-        # manifest_qc.json
         manifest = {
             "git": os.popen("git rev-parse --short HEAD").read().strip(),
             "input": os.path.abspath(args.adata),
@@ -205,7 +218,6 @@ def main() -> None:
         man_json.write_text(json.dumps(manifest, indent=2))
         report_files.append(man_json)
 
-        # quick plots on a subsample
         nmax = int(args.plot_max_cells)
         if ad.n_obs > nmax:
             rng = np.random.default_rng(0)
