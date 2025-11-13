@@ -9,7 +9,6 @@ from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
-from pandas._typing
 import scanpy as sc  # type: ignore
 from scipy import sparse
 import subprocess
