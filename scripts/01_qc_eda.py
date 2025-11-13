@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
+from pandas._typing
 import scanpy as sc  # type: ignore
 from scipy import sparse
 import subprocess
@@ -44,7 +45,7 @@ def _try_gsutil_cp(paths: List[Path], gs_prefix: str) -> Dict[str, List[str]]:
     Try to 'gsutil cp' each file. Always keep local copies.
     Returns a dict with 'uploaded' and 'failed' lists of basenames.
     """
-    results = {"uploaded": [], "failed": []}
+    results: dict[str, list[str]] = {"uploaded": [], "failed": []}
     gs_prefix = gs_prefix.rstrip("/")
 
     for p in paths:
@@ -253,10 +254,8 @@ def main() -> None:
         # PCA/Neighbors/UMAP if needed for nicer violins ordering later (optional)
         if "X_pca" not in ad_plot.obsm:
             sc.pp.scale(ad_plot, max_value=10)
-            sc.tl.pca(ad_plot, svd_solver="arpack")
+            sc.pl.pca(ad_plot, svd_solver="arpack", save=out_dir / "K516_pca.png")
 
-        # ---- Figures (ALWAYS saved locally first) ----
-        # 1) QC violin
         qc_png = out_dir / "qc_violin.png"
         try:
             sc.pl.violin(

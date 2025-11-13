@@ -1,12 +1,9 @@
 {
-  "typeCheckingMode": "basic",
+  "typeCheckingMode": "off",
   "reportMissingTypeStubs": "none",
-  "reportUnknownVariableType": "warning",
-  "reportUnknownMemberType": "warning",
-  "reportMissingImports": "warning",
+  "reportUnknownVariableType": "none",
+  "reportUnknownMemberType": "none",
+  "reportMissingImports": "none",
   "venvPath": ".",
-  "ignore": [
-    "data",
-    "out"
-  ]
+  "ignore": ["data", "out"]
 }

@@ -1,0 +1,4 @@
+method,r2,pearson,spearman
+TWAS-only,0.05,0.24,0.22
+Program-mean,0.08,0.3,0.28
+Linear no-manifold,0.12,0.36,0.34
