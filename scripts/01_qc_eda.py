@@ -123,8 +123,8 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     ad = ad[ad.obs["mitopercent"] < float(params["qc"]["max_pct_mt"])].copy()
 
     # --- 2) Store raw counts before normalization ---
-    if "counts" not in ad.layers:
-        ad.layers["counts"] = ad.X.copy()
+    # if "counts" not in ad.layers:
+    #     ad.layers["counts"] = ad.X.copy()
 
     _auto_normalize_total(ad)
     sc.pp.log1p(ad)
@@ -132,7 +132,7 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     # Store log-norm count matrix
     # ad.layers["lognorm"] = ad.X.copy()
 
-    flavor = "seurat_v3" if is_integer_like_matrix(ad.layers["counts"]) else "seurat"
+    flavor = "seurat_v3" if is_integer_like_matrix(ad.X) else "seurat"
 
     sc.pp.highly_variable_genes(
         ad, n_top_genes=int(params["hvg_n_top_genes"]), subset=True, flavor=flavor
@@ -291,7 +291,7 @@ def main() -> None:
     # ---- persist ----
     qc_d_path = out_dir / "unperturbed_qc.h5ad"
     qc_ad.write_h5ad(qc_d_path)
-
+    print("[main] after write_h5ad", flush=True)
     # ---- reporting (optional) ----
     # report(qc_ad)
 
@@ -320,16 +320,18 @@ def main() -> None:
     if sparse.issparse(qc_dcol.X):
         X_sub = X_sub.toarray()
 
+    print("[main] before DCOL block", flush=True)
     K_sub = dcol_pca0(X_sub, nPC_max=n_pcs, Scale=True)
     vecs = K_sub["vecs"]  # shape n_genes x n_pcs
 
     # Project all cells using the same gene loadings
     X_full = qc_ad.X
     X_proj_full = X_full @ vecs
-
+    print("[main] after DCOL block", flush=True)
     qc_ad.obsm["X_dcolpca"] = X_proj_full
     d_plot = plot_spectral(K_sub["vals"], out_dir, "dcol-pca")
     qc_ad.write_h5ad(d_plot)
+    print("[main] b4 PCA", flush=True)
     # =========================
     # Optional: regular PCA for comparison
     # =========================

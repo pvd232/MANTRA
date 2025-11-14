@@ -343,7 +343,10 @@ def plot_result(reduced_data: np.ndarray, group_info, k: int = 2):
 
     return ari
 
-def plot_spectral(vals: np.ndarray, out_dir : Path, title_prefix: str = "DCOL-PCA") -> None:
+
+def plot_spectral(
+    vals: np.ndarray, out_dir: Path, title_prefix: str = "DCOL-PCA"
+) -> Path:
     """
     Make scree + cumulative variance plots for spectral decomp e.g., PCA, DCOL-PCA, etc eigenvalues.
 
