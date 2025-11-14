@@ -327,24 +327,24 @@ def main() -> None:
     X_full = qc_ad.X
     X_proj_full = X_full @ vecs
 
-    # qc_ad.obsm["X_dcolpca"] = X_proj_full
+    qc_ad.obsm["X_dcolpca"] = X_proj_full
     d_plot = plot_spectral(K_sub["vals"], out_dir, "dcol-pca")
-
+    qc_ad.write_h5ad(d_plot)
     # =========================
     # Optional: regular PCA for comparison
     # =========================
     # sc.tl.pca(qc_ad, n_comps=n_pcs, use_highly_variable=False)
-    sc.tl.pca(qc_ad, n_comps=n_pcs, use_highly_variable=False, zero_center=False)
+    # sc.tl.pca(qc_ad, n_comps=n_pcs, use_highly_variable=False, zero_center=False)
 
-    pca_vals = qc_ad.uns["pca"]["variance"]
-    pca_plot = plot_spectral(pca_vals, out_dir, "reg-pca")
+    # pca_vals = qc_ad.uns["pca"]["variance"]
+    # pca_plot = plot_spectral(pca_vals, out_dir, "reg-pca")
 
-    qc_pca_path = out_dir / "pca.h5ad"
-    qc_ad.write_h5ad(qc_pca_path)
+    # qc_pca_path = out_dir / "pca.h5ad"
+    # qc_ad.write_h5ad(qc_pca_path)
 
     # Upload if requested
-    if args.report_to_gcs:
-        _try_gsutil_cp([qc_d_path, qc_pca_path, d_plot, pca_plot], args.report_to_gcs)
+    # if args.report_to_gcs:
+    #     _try_gsutil_cp([qc_d_path, qc_pca_path, d_plot, pca_plot], args.report_to_gcs)
 
 
 if __name__ == "__main__":
