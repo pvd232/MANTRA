@@ -14,7 +14,7 @@ from scipy import sparse
 import subprocess
 import yaml
 import matplotlib.pyplot as plt
-from dcol_pca import dcol_pca0, plot_dcol_scree
+from dcol_pca import dcol_pca0, plot_spectral
 
 def build_argparser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description="QC + EDA for unperturbed cells.")
@@ -298,7 +298,7 @@ def main() -> None:
     n_pcs = int(params.get("n_pcs", 50))
     K_ad = dcol_pca0(qc_ad.X, nPC_max=n_pcs, Scale=False)
     qc_ad.obsm["X_dcolpca"] = K_ad["X_proj"]
-    plot = plot_dcol_scree(K_ad["vals"], out_dir, "dcol-pca")
+    plot = plot_spectral(K_ad["vals"], out_dir, "dcol-pca")
 
     sc.tl.pca(qc_ad, n_comps=n_pcs, use_highly_variable=False)
     qc_ad.write_h5ad(out_dir / "unperturbed_qc_with_pca_dcol.h5ad", "pca")
