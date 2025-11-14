@@ -137,7 +137,7 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     sc.pp.highly_variable_genes(
         ad, n_top_genes=int(params["hvg_n_top_genes"]), subset=True, flavor=flavor
     )
-    sc.pp.scale(ad, max_value=10)
+    # sc.pp.scale(ad, max_value=10)
     return ad
 
 
@@ -333,7 +333,9 @@ def main() -> None:
     # =========================
     # Optional: regular PCA for comparison
     # =========================
-    sc.tl.pca(qc_ad, n_comps=n_pcs, use_highly_variable=False)
+    # sc.tl.pca(qc_ad, n_comps=n_pcs, use_highly_variable=False)
+    sc.tl.pca(qc_ad, n_comps=n_pcs, use_highly_variable=False, zero_center=False)
+
     pca_vals = qc_ad.uns["pca"]["variance"]
     pca_plot = plot_spectral(pca_vals, out_dir, "reg-pca")
 
