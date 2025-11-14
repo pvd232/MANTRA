@@ -289,8 +289,8 @@ def main() -> None:
     qc_ad = prep(ad.copy(), params)
 
     # ---- persist ----
-    qc_path = out_dir / "unperturbed_qc.h5ad"
-    qc_ad.write_h5ad(qc_path)
+    qc_d_path = out_dir / "unperturbed_qc.h5ad"
+    qc_ad.write_h5ad(qc_d_path)
 
     # ---- reporting (optional) ----
     # report(qc_ad)
@@ -298,11 +298,12 @@ def main() -> None:
     n_pcs = int(params.get("n_pcs", 50))
     K_ad = dcol_pca0(qc_ad.X, nPC_max=n_pcs, Scale=False)
     qc_ad.obsm["X_dcolpca"] = K_ad["X_proj"]
-    plot = plot_spectral(K_ad["vals"], out_dir, "dcol-pca")
+    d_plot = plot_spectral(K_ad["vals"], out_dir, "dcol-pca")
 
-    sc.tl.pca(qc_ad, n_comps=n_pcs, use_highly_variable=False)
-    qc_ad.write_h5ad(out_dir / "unperturbed_qc_with_pca_dcol.h5ad", "pca")
-    _try_gsutil_cp([plot], args.report_to_gcs)
+    qc_pca_path = out_dir / "pca.h5ad"
+    qc_ad.write_h5ad(qc_pca_path)
+    pca_plot = plot_spectral(K_ad["vals"], out_dir, "reg-pca")
+    _try_gsutil_cp([qc_d_path, qc_pca_path, d_plot, pca_plot], args.report_to_gcs)
 
 
 if __name__ == "__main__":
