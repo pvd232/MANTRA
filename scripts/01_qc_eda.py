@@ -130,7 +130,7 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     sc.pp.log1p(ad)
 
     # Store log-norm count matrix
-    ad.layers["lognorm"] = ad.X.copy()
+    # ad.layers["lognorm"] = ad.X.copy()
 
     flavor = "seurat_v3" if is_integer_like_matrix(ad.layers["counts"]) else "seurat"
 
