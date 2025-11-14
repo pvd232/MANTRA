@@ -30,7 +30,7 @@ class CNMFParams(TypedDict):
 class Params(TypedDict):
     hvg_n_top_genes: int
     pct_mito_max: float
-    min_genes_per_cell: int
+    min_genes: int
     cnmf: CNMFParams
 
 
@@ -53,7 +53,7 @@ def load_params(path: Path) -> Params:
     params: Params = {
         "hvg_n_top_genes": int(raw["hvg_n_top_genes"]),
         "pct_mito_max": float(raw["pct_mito_max"]),
-        "min_genes_per_cell": int(raw["min_genes_per_cell"]),
+        "min_genes": int(raw["min_genes"]),
         "cnmf": {
             "K": int(cnmf_raw["K"]),
             "max_iter": int(cnmf_raw["max_iter"]),

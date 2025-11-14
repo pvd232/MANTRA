@@ -1,7 +1,5 @@
 seed: 7
 hvg_n_top_genes: 3000
-pct_mito_max: 15.0
-min_genes_per_cell: 200
 
 cnmf:
   K: 50
@@ -20,6 +18,6 @@ metrics:
   calib_bins: 10
 
 qc:
-  min_counts: 500
+  min_cells: 500
   min_genes: 200
-  max_pct_mt: 20
+  max_pct_mt: 15
