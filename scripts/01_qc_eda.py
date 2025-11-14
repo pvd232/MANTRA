@@ -327,7 +327,7 @@ def main() -> None:
     X_full = qc_ad.X
     X_proj_full = X_full @ vecs
 
-    qc_ad.obsm["X_dcolpca"] = X_proj_full
+    # qc_ad.obsm["X_dcolpca"] = X_proj_full
     d_plot = plot_spectral(K_sub["vals"], out_dir, "dcol-pca")
 
     # =========================
