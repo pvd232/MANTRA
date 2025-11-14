@@ -302,14 +302,40 @@ def main() -> None:
         rng = np.random.default_rng(0)
         idx = np.sort(rng.choice(qc_ad.n_obs, size=max_cells_dcol, replace=False))
         qc_dcol = qc_ad[idx, :].copy()
-    K_ad = dcol_pca0(qc_ad.X, nPC_max=n_pcs, Scale=False)
-    qc_ad.obsm["X_dcolpca"] = K_ad["X_proj"]
-    d_plot = plot_spectral(K_ad["vals"], out_dir, "dcol-pca")
+
+    else:
+        qc_dcol = qc_ad
+
+    X_sub = qc_dcol.X
+
+    # Make a dense matrix for the *subset only*
+    # and only if sparse
+    if sparse.issparse(qc_dcol.X):
+        X_sub = X_sub.toarray()
+
+    K_sub = dcol_pca0(qc_ad.X, nPC_max=n_pcs, Scale=False)
+    vecs = K_sub["vecs"]  # shape n_genes x n_pcs
+
+    # Project all cells using the same gene loadings
+    X_full = qc_ad.X
+    X_proj_full = X_full @ vecs
+
+    qc_ad.obsm["X_dcolpca"] = X_proj_full
+    d_plot = plot_spectral(X_proj_full, out_dir, "dcol-pca")
+
+    # =========================
+    # Optional: regular PCA for comparison
+    # =========================
+    sc.tl.pca(qc_ad, n_comps=n_pcs, use_highly_variable=False)
+    pca_vals = qc_ad.uns["pca"]["variance"]
+    pca_plot = plot_spectral(pca_vals, out_dir, "reg-pca")
 
     qc_pca_path = out_dir / "pca.h5ad"
     qc_ad.write_h5ad(qc_pca_path)
-    pca_plot = plot_spectral(K_ad["vals"], out_dir, "reg-pca")
-    _try_gsutil_cp([qc_d_path, qc_pca_path, d_plot, pca_plot], args.report_to_gcs)
+
+    # Upload if requested
+    if args.report_to_gcs:
+        _try_gsutil_cp([qc_d_path, qc_pca_path, d_plot, pca_plot], args.report_to_gcs)
 
 
 if __name__ == "__main__":
