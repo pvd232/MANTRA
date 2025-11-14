@@ -302,18 +302,25 @@ def main() -> None:
         rng = np.random.default_rng(0)
         idx = np.sort(rng.choice(qc_ad.n_obs, size=max_cells_dcol, replace=False))
         qc_dcol = qc_ad[idx, :].copy()
+        print(
+            f"[dcol_pca] subsampled {max_cells_dcol}/{qc_ad.n_obs} cells for DCOL-PCA"
+        )
 
     else:
         qc_dcol = qc_ad
+        print(f"[dcol_pca] using all {qc_ad.n_obs} cells for DCOL-PCA")
 
     X_sub = qc_dcol.X
 
     # Make a dense matrix for the *subset only*
     # and only if sparse
+    print(
+        "[dcol_pca] subset shape:", qc_dcol.shape, "sparse?", sparse.issparse(qc_dcol.X)
+    )
     if sparse.issparse(qc_dcol.X):
         X_sub = X_sub.toarray()
 
-    K_sub = dcol_pca0(X_sub.X, nPC_max=n_pcs, Scale=False)
+    K_sub = dcol_pca0(X_sub, nPC_max=n_pcs, Scale=False)
     vecs = K_sub["vecs"]  # shape n_genes x n_pcs
 
     # Project all cells using the same gene loadings
