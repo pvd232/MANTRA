@@ -313,7 +313,7 @@ def main() -> None:
     if sparse.issparse(qc_dcol.X):
         X_sub = X_sub.toarray()
 
-    K_sub = dcol_pca0(qc_ad.X, nPC_max=n_pcs, Scale=False)
+    K_sub = dcol_pca0(X_sub.X, nPC_max=n_pcs, Scale=False)
     vecs = K_sub["vecs"]  # shape n_genes x n_pcs
 
     # Project all cells using the same gene loadings
