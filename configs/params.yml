@@ -1,6 +1,11 @@
 seed: 7
 hvg_n_top_genes: 3000
 
+spec:
+  n_pcs: 100
+  dcol_max_cells: 100
+
+
 cnmf:
   K: 50
   max_iter: 500

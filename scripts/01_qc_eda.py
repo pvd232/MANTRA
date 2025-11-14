@@ -295,7 +295,13 @@ def main() -> None:
     # ---- reporting (optional) ----
     # report(qc_ad)
 
-    n_pcs = int(params.get("n_pcs", 50))
+    n_pcs = int(params["spec"]["n_pcs"])
+    max_cells_dcol = int(params["spec"]["dcol_max_cells"])
+
+    if qc_ad.n_obs > max_cells_dcol:
+        rng = np.random.default_rng(0)
+        idx = np.sort(rng.choice(qc_ad.n_obs, size=max_cells_dcol, replace=False))
+        qc_dcol = qc_ad[idx, :].copy()
     K_ad = dcol_pca0(qc_ad.X, nPC_max=n_pcs, Scale=False)
     qc_ad.obsm["X_dcolpca"] = K_ad["X_proj"]
     d_plot = plot_spectral(K_ad["vals"], out_dir, "dcol-pca")
