@@ -120,7 +120,7 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     sc.pp.filter_cells(ad, min_genes=int(params["qc"]["min_genes"]))
 
     # Cells with high percent of mitochondrial DNA are dying or damaged
-    ad = ad[ad.obs["mitopercent"] < float(params["qc"]["pct_mito_max"])].copy()
+    ad = ad[ad.obs["mitopercent"] < float(params["qc"]["max_pct_mt"])].copy()
 
     # --- 2) Store raw counts before normalization ---
     if "counts" not in ad.layers:
