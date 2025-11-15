@@ -125,30 +125,42 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     ad = ad[ad.obs["mitopercent"] < float(params["qc"]["max_pct_mt"])].copy()
     print("126", flush=True)
 
-    # --- 2) Store raw counts before normalization ---
-    # if "counts" not in ad.layers:
-    #     ad.layers["counts"] = ad.X.copy()
-    sc.pp.normalize_total(
-        ad,
-        target_sum=10e4,
-        # we can pass the same threshold we used for diagnostics
-        # max_fraction=frac_thresh,
-    )
-    print("137", flush=True)
+    # pick counts
+    if "counts" in (ad.layers or {}):
+        counts_layer = "counts"
+    elif ad.raw is not None:
+        ad.layers["counts"] = ad.raw.X
+        counts_layer = "counts"
+    else:
+        counts_layer = None  # fall back to X; then use flavor="seurat" below
 
-    # _auto_normalize_total(ad)
+    # drop zero-count cells (on counts if present)
+    Xc = ad.layers[counts_layer] if counts_layer else ad.X
+    totals = np.ravel(Xc.sum(axis=1))
+    ad = ad[totals > 0, :].copy()
+
+    # HVG
+    if counts_layer:
+        sc.pp.highly_variable_genes(
+            ad,
+            n_top_genes=int(params["hvg_n_top_genes"]),
+            flavor="seurat_v3",
+            layer=counts_layer,
+            subset=False,
+        )
+    else:
+        sc.pp.highly_variable_genes(
+            ad,
+            n_top_genes=int(params["hvg_n_top_genes"]),
+            flavor="seurat",
+            subset=False,
+        )
+
+    ad = ad[:, ad.var["highly_variable"]].copy()
+
+    # now normalize/log on X (leave counts in layer untouched)
+    sc.pp.normalize_total(ad, target_sum=1e4)
     sc.pp.log1p(ad)
-    print("141", flush=True)
-
-    # Store log-norm count matrix
-    # ad.layers["lognorm"] = ad.X.copy()
-
-    flavor = "seurat_v3" if is_integer_like_matrix(ad.X) else "seurat"
-
-    sc.pp.highly_variable_genes(
-        ad, n_top_genes=int(params["hvg_n_top_genes"]), subset=True, flavor=flavor
-    )
-    print("151", flush=True)
 
     # sc.pp.scale(ad, max_value=10)
     return ad
