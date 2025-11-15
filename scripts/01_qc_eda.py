@@ -126,54 +126,46 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     print("126", flush=True)
 
     # pick counts
-    # ---------- HVGs (robust) ----------
+    if "counts" in (ad.layers or {}):
+        counts_layer = "counts"
+    elif ad.raw is not None:
+        ad.layers["counts"] = ad.raw.X
+        counts_layer = "counts"
+    else:
+        counts_layer = None  # fall back to X; then use flavor="seurat" below
 
-    # keep counts in a dedicated layer and do HVG on that
-    # counts_layer = None
-    # if getattr(ad, "layers", None) and "counts" in ad.layers:
-    #     counts_layer = "counts"
-    # elif ad.raw is not None:
-    #     ad.layers["counts"] = ad.raw.X
-    #     counts_layer = "counts"
+    # drop zero-count cells (on counts if present)
+    Xc = ad.layers[counts_layer] if counts_layer else ad.X
+    totals = np.ravel(Xc.sum(axis=1))
+    ad = ad[totals > 0, :].copy()
 
-    # keep matrices sparse & float32 to reduce RAM
-    def _as_sparse32(M):
-        if not sparse.issparse(M):
-            M = sparse.csr_matrix(M)
-        return M.astype("float32", copy=False)
+    # HVG
+    if counts_layer:
+        print("v_3", flush=True)
+        sc.pp.highly_variable_genes(
+            ad,
+            n_top_genes=int(params["hvg_n_top_genes"]),
+            flavor="seurat_v3",
+            layer=counts_layer,
+            subset=False,
+        )
+    else:
+        print("non v_3", flush=True)
+        sc.pp.highly_variable_genes(
+            ad,
+            n_top_genes=int(params["hvg_n_top_genes"]),
+            flavor="seurat",
+            subset=False,
+        )
 
-    ad.X = _as_sparse32(ad.X)
-    # if count    /s_layer:
-    ad.layers["counts"] = _as_sparse32(ad.layers["counts"])
+    ad = ad[:, ad.var["highly_variable"]].copy()
 
-    # 1) compute HVG flags without subsetting (avoids big temporary copies)
-    # try:
-    #     # if counts_layer:
-    #     sc.pp.highly_variable_genes(
-    #         ad,
-    #         n_top_genes=int(params["hvg_n_top_genes"]),
-    #         flavor="seurat_v3",  # only valid on raw counts
-    #         layer=ad.layers["counts"],
-    #         subset=False,
-    #     )
-    # except Exception as e:
-    # print(f"[HVG] seurat_v3 failed ({e}); falling back to flavor='seurat' on X")
-    sc.pp.highly_variable_genes(
-        ad,
-        n_top_genes=int(params["hvg_n_top_genes"]),
-        flavor="seurat",  # works on normalized/non-integers
-        subset=False,
-    )
-
-    # 2) now subset to HVGs
-    hv_mask = ad.var.get("highly_variable", None)
-    if hv_mask is None:
-        raise RuntimeError("HVG mask missing; Scanpy did not set 'highly_variable'.")
-    ad = ad[:, hv_mask.values if hasattr(hv_mask, "values") else hv_mask].copy()
-
-    # 3) normalize/log AFTER HVG selection
+    # now normalize/log on X (leave counts in layer untouched)
     sc.pp.normalize_total(ad, target_sum=1e4)
     sc.pp.log1p(ad)
+
+    # sc.pp.scale(ad, max_value=10)
+    return ad
 
 
 def _try_gsutil_cp(paths: List[Path], gs_prefix: str) -> Dict[str, List[str]]:
@@ -388,10 +380,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    # keep BLAS threads tame (prevents OOM kills)
-    import os
-
-    os.environ.setdefault("OMP_NUM_THREADS", "1")
-    os.environ.setdefault("MKL_NUM_THREADS", "1")
-    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
     main()
