@@ -157,7 +157,7 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     #         subset=False,
     #     )
     # except Exception as e:
-    print(f"[HVG] seurat_v3 failed ({e}); falling back to flavor='seurat' on X")
+    # print(f"[HVG] seurat_v3 failed ({e}); falling back to flavor='seurat' on X")
     sc.pp.highly_variable_genes(
         ad,
         n_top_genes=int(params["hvg_n_top_genes"]),
@@ -388,4 +388,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # keep BLAS threads tame (prevents OOM kills)
+    import os
+
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.environ.setdefault("MKL_NUM_THREADS", "1")
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
     main()
