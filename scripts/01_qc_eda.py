@@ -134,19 +134,6 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
 
     # drop zero-count cells (on counts if present)
     # Xc = ad.layers[counts_layer] if counts_layer else ad.X
-    totals = np.ravel(ad.X.sum(axis=1))
-    ad = ad[totals > 0, :].copy()
-
-    if "counts" in (ad.layers or {}):
-        X_counts = ad.layers["counts"]
-        counts_src = "layers['counts']"
-    elif ad.raw is not None:
-        X_counts = ad.raw.X
-        counts_src = "raw.X"
-    else:
-        X_counts = ad.X
-        counts_src = "X (assumed counts)"
-    print(f"[QC] Using {counts_src} as counts source", flush=True)
 
     print("139", flush=True)
     print("AnnData layers:", list(ad.layers.keys()), flush=True)
@@ -169,23 +156,11 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     print("Means min/max:", np.nanmin(means), np.nanmax(means), flush=True)
     print("# non-finite means:", np.sum(~np.isfinite(means)), flush=True)
 
-    # HVG
-    # if counts_layer:
-    #     print("v_3", flush=True)
-    #     sc.pp.highly_variable_genes(
-    #         ad,
-    #         n_top_genes=int(params["hvg_n_top_genes"]),
-    #         flavor="seurat_v3",
-    #         layer=counts_layer,
-    #         subset=False,
-    #     )
-    # else:
-    #     print("non v_3", flush=True)
+    # no raw counts object, must use ad.X
     sc.pp.highly_variable_genes(
         ad,
         n_top_genes=int(params["hvg_n_top_genes"]),
         flavor="seurat_v3",
-        # layer=X_counts,
         subset=False,
     )
     print("159", flush=True)

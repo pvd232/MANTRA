@@ -118,18 +118,40 @@ def get_cov(dcol_matrix: np.ndarray, X: np.ndarray, Y: np.ndarray) -> np.ndarray
         X = X.ravel()
         Y = Y.ravel()
         n = X.shape[0]
-        var_Y = np.var(Y, ddof=1)  # sample variance
+        var_Y = np.var(Y, ddof=1)
+        if var_Y <= 0:
+            # Degenerate case: no variance in Y, return 0 correlation
+            return 0.0
         value = np.sqrt(max(0.0, 1.0 - dcol.item() / (2.0 * (n - 2.0) * var_Y)))
         return float(value)
 
     # Matrix case
     n = X.shape[0]
     var_list = np.var(Y, axis=0, ddof=1)  # sample variance over samples
-    scale = 1.0 / (2.0 * (n - 2.0) * var_list)  # length p
+
+    eps = 1e-12
+    zero_var = var_list <= eps
+    if np.any(zero_var):
+        print(
+            f"[get_cov] {zero_var.sum()} zero-variance features; stabilizing",
+            flush=True,
+        )
+
+    scale = np.zeros_like(var_list)
+    ok = ~zero_var
+    scale[ok] = 1.0 / (2.0 * (n - 2.0) * var_list[ok])
 
     # eigenMapMatMult(DCOLMatrix, diag(scale)) == column-wise scaling by 'scale'
     cov_matrix = 1.0 - dcol * scale  # broadcast scale across rows
-    cov_matrix[cov_matrix < 0] = 0.0
+    cov_matrix[cov_matrix < 0] = 0.0  # clamp negs to 0 for num stability
+
+    # For zero-var features, zero out row/cl and set diag to 1
+    if np.any(zero_var):
+        cov_matrix[:, zero_var] = 0.0
+        cov_matrix[zero_var, :] = 0.0
+        idx = np.where(zero_var)[0]
+        cov_matrix[idx, idx] = 1.0
+
     cov_matrix = np.sqrt(cov_matrix)
     return cov_matrix
 
@@ -186,9 +208,20 @@ def dcol_pca0(
     DcolMatrix = find_dcol(X.T, X.T, n_nodes=nNodes)
     cov_D = get_cov(DcolMatrix, X, X)  # DCOL-correlation matrix
 
+    # Suppose cov_D is the matrix passed to eigsh
+    print("[dcol_pca] cov_D finite?", np.isfinite(cov_D).all(), flush=True)
+    print("[dcol_pca] cov_D min/max:", np.nanmin(cov_D), np.nanmax(cov_D), flush=True)
+
     # Eigen-decomposition (like RSpectra::eigs_sym on symmetric cov_D)
     p = cov_D.shape[0]
     nPC = min(nPC_max, p)
+
+    # Enforce symmetry and remove NaN/Inf just in case
+    cov_D = 0.5 * (cov_D + cov_D.T)
+    cov_D = np.nan_to_num(cov_D, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # Add tiny diagonal jitter for numerical stablility
+    cov_D.flat[:: p + 1] += 1e-8
 
     if p <= nPC + 10:
         # small matrix: use dense eigh
