@@ -165,8 +165,8 @@ def main() -> None:
             ad.obs["mitopercent"] = 100.0 * ad.obs["mitopercent"]
 
     # ---- filters ----
-    min_genes = int(params["min_genes"])
-    pct_mito_max = float(params["pct_mito_max"])
+    min_genes = int(params["qc"]["min_genes"])
+    pct_mito_max = float(params["qc"]["pct_mito_max"])
     mask = (ad.obs["n_genes_by_counts"] > min_genes) & (
         ad.obs["mitopercent"] < pct_mito_max
     )
