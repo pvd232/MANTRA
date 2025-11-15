@@ -125,38 +125,38 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     ad = ad[ad.obs["mitopercent"] < float(params["qc"]["max_pct_mt"])].copy()
     print("126", flush=True)
 
-    # pick counts
-    if "counts" in (ad.layers or {}):
-        counts_layer = "counts"
-    elif ad.raw is not None:
-        ad.layers["counts"] = ad.raw.X
-        counts_layer = "counts"
-    else:
-        counts_layer = None  # fall back to X; then use flavor="seurat" below
+    # def _as_sparse32(M):
+    #     if not sparse.issparse(M):
+    #         M = sparse.csr_matrix(M)
+    #     return M.astype("float32", copy=False)
+
+    # ad.X = _as_sparse32(ad.X)
 
     # drop zero-count cells (on counts if present)
-    Xc = ad.layers[counts_layer] if counts_layer else ad.X
-    totals = np.ravel(Xc.sum(axis=1))
+    # Xc = ad.layers[counts_layer] if counts_layer else ad.X
+    totals = np.ravel(ad.X.sum(axis=1))
     ad = ad[totals > 0, :].copy()
+    print("139", flush=True)
 
     # HVG
-    if counts_layer:
-        print("v_3", flush=True)
-        sc.pp.highly_variable_genes(
-            ad,
-            n_top_genes=int(params["hvg_n_top_genes"]),
-            flavor="seurat_v3",
-            layer=counts_layer,
-            subset=False,
-        )
-    else:
-        print("non v_3", flush=True)
-        sc.pp.highly_variable_genes(
-            ad,
-            n_top_genes=int(params["hvg_n_top_genes"]),
-            flavor="seurat",
-            subset=False,
-        )
+    # if counts_layer:
+    #     print("v_3", flush=True)
+    #     sc.pp.highly_variable_genes(
+    #         ad,
+    #         n_top_genes=int(params["hvg_n_top_genes"]),
+    #         flavor="seurat_v3",
+    #         layer=counts_layer,
+    #         subset=False,
+    #     )
+    # else:
+    #     print("non v_3", flush=True)
+    sc.pp.highly_variable_genes(
+        ad,
+        n_top_genes=int(params["hvg_n_top_genes"]),
+        flavor="seurat",
+        subset=False,
+    )
+    print("159", flush=True)
 
     ad = ad[:, ad.var["highly_variable"]].copy()
 
@@ -308,6 +308,9 @@ def main() -> None:
 
     # Load AnnData
     ad = sc.read_h5ad(args.ad)
+    if not sparse.issparse(ad.X):
+        ad.X = sparse.csr_matrix(ad.X)
+    ad.X = ad.X.astype("float32", copy=False)
     print("284", flush=True)
     for col in ad.obs.columns:
         print("obs col:", col, flush=True)
