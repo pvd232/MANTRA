@@ -271,6 +271,8 @@ def report(ad: sc.AnnData, args: Dict[str], params: Dict[str]) -> None:
 
 
 def main() -> None:
+    print("start", flush=True)
+
     args = build_argparser().parse_args()
     params: Dict[str, Any] = yaml.safe_load(Path(args.params).read_text())
 
@@ -279,7 +281,7 @@ def main() -> None:
 
     # Load AnnData
     ad = sc.read_h5ad(args.ad)
-    print("ad shape", ad.shape)
+    print("284", flush=True)
     for col in ad.obs.columns:
         print("obs col:", col)
     for col in ad.var.columns:
