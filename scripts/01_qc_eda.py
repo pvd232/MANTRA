@@ -185,7 +185,7 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
         ad,
         n_top_genes=int(params["hvg_n_top_genes"]),
         flavor="seurat_v3",
-        layer=X_counts,
+        # layer=X_counts,
         subset=False,
     )
     print("159", flush=True)
@@ -342,7 +342,7 @@ def main() -> None:
     ad = sc.read_h5ad(args.ad)
     if not sparse.issparse(ad.X):
         ad.X = sparse.csr_matrix(ad.X)
-    ad.X = ad.X.astype("float32", copy=False)
+    # ad.X = ad.X.astype("float32", copy=False)
     print("284", flush=True)
     for col in ad.obs.columns:
         print("obs col:", col, flush=True)
