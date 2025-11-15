@@ -129,12 +129,12 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     # ---------- HVGs (robust) ----------
 
     # keep counts in a dedicated layer and do HVG on that
-    counts_layer = None
-    if getattr(ad, "layers", None) and "counts" in ad.layers:
-        counts_layer = "counts"
-    elif ad.raw is not None:
-        ad.layers["counts"] = ad.raw.X
-        counts_layer = "counts"
+    # counts_layer = None
+    # if getattr(ad, "layers", None) and "counts" in ad.layers:
+    #     counts_layer = "counts"
+    # elif ad.raw is not None:
+    #     ad.layers["counts"] = ad.raw.X
+    #     counts_layer = "counts"
 
     # keep matrices sparse & float32 to reduce RAM
     def _as_sparse32(M):
@@ -143,29 +143,27 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
         return M.astype("float32", copy=False)
 
     ad.X = _as_sparse32(ad.X)
-    if counts_layer:
-        ad.layers["counts"] = _as_sparse32(ad.layers["counts"])
+    # if count    /s_layer:
+    ad.layers["counts"] = _as_sparse32(ad.layers["counts"])
 
     # 1) compute HVG flags without subsetting (avoids big temporary copies)
-    try:
-        if counts_layer:
-            sc.pp.highly_variable_genes(
-                ad,
-                n_top_genes=int(params["hvg_n_top_genes"]),
-                flavor="seurat_v3",  # only valid on raw counts
-                layer=counts_layer,
-                subset=False,
-            )
-        else:
-            raise RuntimeError("no counts layer")
-    except Exception as e:
-        print(f"[HVG] seurat_v3 failed ({e}); falling back to flavor='seurat' on X")
-        sc.pp.highly_variable_genes(
-            ad,
-            n_top_genes=int(params["hvg_n_top_genes"]),
-            flavor="seurat",  # works on normalized/non-integers
-            subset=False,
-        )
+    # try:
+    #     # if counts_layer:
+    #     sc.pp.highly_variable_genes(
+    #         ad,
+    #         n_top_genes=int(params["hvg_n_top_genes"]),
+    #         flavor="seurat_v3",  # only valid on raw counts
+    #         layer=ad.layers["counts"],
+    #         subset=False,
+    #     )
+    # except Exception as e:
+    print(f"[HVG] seurat_v3 failed ({e}); falling back to flavor='seurat' on X")
+    sc.pp.highly_variable_genes(
+        ad,
+        n_top_genes=int(params["hvg_n_top_genes"]),
+        flavor="seurat",  # works on normalized/non-integers
+        subset=False,
+    )
 
     # 2) now subset to HVGs
     hv_mask = ad.var.get("highly_variable", None)
