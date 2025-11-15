@@ -166,7 +166,7 @@ def main() -> None:
 
     # ---- filters ----
     min_genes = int(params["qc"]["min_genes"])
-    pct_mito_max = float(params["qc"]["pct_mito_max"])
+    pct_mito_max = float(params["qc"]["max_pct_mt"])
     mask = (ad.obs["n_genes_by_counts"] > min_genes) & (
         ad.obs["mitopercent"] < pct_mito_max
     )
