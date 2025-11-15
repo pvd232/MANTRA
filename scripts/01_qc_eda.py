@@ -136,7 +136,38 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     # Xc = ad.layers[counts_layer] if counts_layer else ad.X
     totals = np.ravel(ad.X.sum(axis=1))
     ad = ad[totals > 0, :].copy()
+
+    if "counts" in (ad.layers or {}):
+        X_counts = ad.layers["counts"]
+        counts_src = "layers['counts']"
+    elif ad.raw is not None:
+        X_counts = ad.raw.X
+        counts_src = "raw.X"
+    else:
+        X_counts = ad.X
+        counts_src = "X (assumed counts)"
+    print(f"[QC] Using {counts_src} as counts source", flush=True)
+
     print("139", flush=True)
+    print("AnnData layers:", list(ad.layers.keys()), flush=True)
+    print("AnnData obs columns:", list(ad.obs.columns), flush=True)
+    print("AnnData var columns:", list(ad.var.columns), flush=True)
+
+    # How many genes/cells remain just before HVG?
+    print("n_obs, n_vars:", ad.n_obs, ad.n_vars, flush=True)
+
+    # Check for inf/nan in means explicitly:
+    from scipy import sparse
+
+    X = ad.X
+    if sparse.issparse(X):
+        means = np.asarray(X.mean(axis=0)).ravel()
+    else:
+        means = np.nanmean(X, axis=0)
+
+    print("Means finite?", np.all(np.isfinite(means)), flush=True)
+    print("Means min/max:", np.nanmin(means), np.nanmax(means), flush=True)
+    print("# non-finite means:", np.sum(~np.isfinite(means)), flush=True)
 
     # HVG
     # if counts_layer:
@@ -153,7 +184,8 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     sc.pp.highly_variable_genes(
         ad,
         n_top_genes=int(params["hvg_n_top_genes"]),
-        flavor="seurat",
+        flavor="seurat_v3",
+        layer=X_counts,
         subset=False,
     )
     print("159", flush=True)
