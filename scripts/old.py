@@ -165,7 +165,7 @@ def main() -> None:
             ad.obs["mitopercent"] = 100.0 * ad.obs["mitopercent"]
 
     # ---- filters ----
-    min_genes = int(params["min_genes_per_cell"])
+    min_genes = int(params["min_genes"])
     pct_mito_max = float(params["pct_mito_max"])
     mask = (ad.obs["n_genes_by_counts"] > min_genes) & (
         ad.obs["mitopercent"] < pct_mito_max
@@ -222,79 +222,79 @@ def main() -> None:
     #         qc_summary.to_csv(qc_csv)
     #         report_files.append(qc_csv)
 
-        # Manifest JSON
-        # manifest = {
-        #     "git": os.popen("git rev-parse --short HEAD").read().strip(),
-        #     "input": os.path.abspath(args.adata),
-        #     "params": {
-        #         "min_genes_per_cell": min_genes,
-        #         "pct_mito_max": pct_mito_max,
-        #         "hvg_n_top_genes": int(params["hvg_n_top_genes"]),
-        #     },
-        #     "n_cells": int(ad.n_obs),
-        #     "n_genes": int(ad.n_vars),
-        #     "obs_cols": list(ad.obs.columns)[:25],
-        #     "var_cols": list(ad.var.columns)[:25],
-        # }
-        # man_json = out_dir / "manifest_qc.json"
-        # # man_json.write_text(json.dumps(manifest, indent=2))
-        # report_files.append(man_json)
+    # Manifest JSON
+    # manifest = {
+    #     "git": os.popen("git rev-parse --short HEAD").read().strip(),
+    #     "input": os.path.abspath(args.adata),
+    #     "params": {
+    #         "min_genes": min_genes,
+    #         "pct_mito_max": pct_mito_max,
+    #         "hvg_n_top_genes": int(params["hvg_n_top_genes"]),
+    #     },
+    #     "n_cells": int(ad.n_obs),
+    #     "n_genes": int(ad.n_vars),
+    #     "obs_cols": list(ad.obs.columns)[:25],
+    #     "var_cols": list(ad.var.columns)[:25],
+    # }
+    # man_json = out_dir / "manifest_qc.json"
+    # # man_json.write_text(json.dumps(manifest, indent=2))
+    # report_files.append(man_json)
 
-        # # Subsample for plotting
-        # nmax = int(args.plot_max_cells)
-        # if ad.n_obs > nmax:
-        #     rng = np.random.default_rng(0)
-        #     idx = np.sort(rng.choice(ad.n_obs, size=nmax, replace=False))
-        #     ad_plot = ad[idx, :].copy()
-        #     print(f"[plot] subsampled {nmax}/{ad.n_obs} for speed")
-        # else:
-        #     ad_plot = ad
+    # # Subsample for plotting
+    # nmax = int(args.plot_max_cells)
+    # if ad.n_obs > nmax:
+    #     rng = np.random.default_rng(0)
+    #     idx = np.sort(rng.choice(ad.n_obs, size=nmax, replace=False))
+    #     ad_plot = ad[idx, :].copy()
+    #     print(f"[plot] subsampled {nmax}/{ad.n_obs} for speed")
+    # else:
+    #     ad_plot = ad
 
-        # # PCA/Neighbors/UMAP if needed for nicer violins ordering later (optional)
-        # if "X_pca" not in ad_plot.obsm:
-        #     sc.pp.scale(ad_plot, max_value=10)
-        #     sc.pl.pca(ad_plot, svd_solver="arpack", save=out_dir / "K516_pca.png")
+    # # PCA/Neighbors/UMAP if needed for nicer violins ordering later (optional)
+    # if "X_pca" not in ad_plot.obsm:
+    #     sc.pp.scale(ad_plot, max_value=10)
+    #     sc.pl.pca(ad_plot, svd_solver="arpack", save=out_dir / "K516_pca.png")
 
-        # qc_png = out_dir / "qc_violin.png"
-        # try:
-        #     sc.pl.violin(
-        #         ad_plot,
-        #         keys=["n_counts", "n_genes_by_counts", "mitopercent"],
-        #         jitter=0.4,
-        #         multi_panel=True,
-        #         show=False,
-        #         save=None,
-        #     )
-        #     plt.savefig(qc_png, bbox_inches="tight", dpi=160)
-        #     plt.close()
-        #     report_files.append(qc_png)
-        # except Exception as e:
-        #     print(f"[plot] violin failed: {e}")
+    # qc_png = out_dir / "qc_violin.png"
+    # try:
+    #     sc.pl.violin(
+    #         ad_plot,
+    #         keys=["n_counts", "n_genes_by_counts", "mitopercent"],
+    #         jitter=0.4,
+    #         multi_panel=True,
+    #         show=False,
+    #         save=None,
+    #     )
+    #     plt.savefig(qc_png, bbox_inches="tight", dpi=160)
+    #     plt.close()
+    #     report_files.append(qc_png)
+    # except Exception as e:
+    #     print(f"[plot] violin failed: {e}")
 
-        # 2) HVG overview
-        # hvg_png = out_dir / "hvg.png"
-        # try:
-        #     sc.pl.highly_variable_genes(ad_plot, show=False, save=None)
-        #     plt.savefig(hvg_png, bbox_inches="tight", dpi=160)
-        #     plt.close()
-        #     report_files.append(hvg_png)
-        # except Exception as e:
-        #     print(f"[plot] hvg plot failed: {e}")
+    # 2) HVG overview
+    # hvg_png = out_dir / "hvg.png"
+    # try:
+    #     sc.pl.highly_variable_genes(ad_plot, show=False, save=None)
+    #     plt.savefig(hvg_png, bbox_inches="tight", dpi=160)
+    #     plt.close()
+    #     report_files.append(hvg_png)
+    # except Exception as e:
+    #     print(f"[plot] hvg plot failed: {e}")
 
-        # print(f"[report] wrote locally: {[p.name for p in report_files]}")
+    # print(f"[report] wrote locally: {[p.name for p in report_files]}")
 
-        # ---- Optional GCS upload (AFTER local writes) ----
-        # if args.report_to_gcs:
-        #     results = _try_gsutil_cp(report_files, args.report_to_gcs)
-        #     if results["uploaded"]:
-        #         print("[report] uploaded to GCS:", ", ".join(results["uploaded"]))
-        #     if results["failed"]:
-        #         print(
-        #             "[report] kept local copies for (upload failed):",
-        #             ", ".join(results["failed"]),
-        #         )
-        # else:
-        #     print("[report] no --report-to-gcs provided; keeping local files only.")
+    # ---- Optional GCS upload (AFTER local writes) ----
+    # if args.report_to_gcs:
+    #     results = _try_gsutil_cp(report_files, args.report_to_gcs)
+    #     if results["uploaded"]:
+    #         print("[report] uploaded to GCS:", ", ".join(results["uploaded"]))
+    #     if results["failed"]:
+    #         print(
+    #             "[report] kept local copies for (upload failed):",
+    #             ", ".join(results["failed"]),
+    #         )
+    # else:
+    #     print("[report] no --report-to-gcs provided; keeping local files only.")
 
 
 if __name__ == "__main__":
