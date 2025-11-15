@@ -111,23 +111,34 @@ def is_integer_like_matrix(M) -> bool:
 def prep(ad: sc.AnnData, params: Dict[str, Any]):
     # Remove genes that are not statistically relevant
     n_cells = ad.n_obs
-
+    print("114", flush=True)
     # gene must appear in >=0.1% of cells
     min_cells = max(3, int(0.001 * n_cells))
     sc.pp.filter_genes(ad, min_cells=min_cells)
+    print("118", flush=True)
 
     # Remove empty droplets
     sc.pp.filter_cells(ad, min_genes=int(params["qc"]["min_genes"]))
+    print("122", flush=True)
 
     # Cells with high percent of mitochondrial DNA are dying or damaged
     ad = ad[ad.obs["mitopercent"] < float(params["qc"]["max_pct_mt"])].copy()
+    print("126", flush=True)
 
     # --- 2) Store raw counts before normalization ---
     # if "counts" not in ad.layers:
     #     ad.layers["counts"] = ad.X.copy()
+    sc.pp.normalize_total(
+        ad,
+        target_sum=10e4,
+        # we can pass the same threshold we used for diagnostics
+        # max_fraction=frac_thresh,
+    )
+    print("137", flush=True)
 
-    _auto_normalize_total(ad)
+    # _auto_normalize_total(ad)
     sc.pp.log1p(ad)
+    print("141", flush=True)
 
     # Store log-norm count matrix
     # ad.layers["lognorm"] = ad.X.copy()
@@ -137,6 +148,8 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     sc.pp.highly_variable_genes(
         ad, n_top_genes=int(params["hvg_n_top_genes"]), subset=True, flavor=flavor
     )
+    print("151", flush=True)
+
     # sc.pp.scale(ad, max_value=10)
     return ad
 
@@ -283,12 +296,13 @@ def main() -> None:
     ad = sc.read_h5ad(args.ad)
     print("284", flush=True)
     for col in ad.obs.columns:
-        print("obs col:", col)
+        print("obs col:", col, flush=True)
     for col in ad.var.columns:
-        print("var col:", col)
+        print("var col:", col, flush=True)
 
     # QC processing
     qc_ad = prep(ad.copy(), params)
+    print("305", flush=True)
 
     # ---- persist ----
     qc_d_path = out_dir / "unperturbed_qc.h5ad"
