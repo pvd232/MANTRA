@@ -327,7 +327,7 @@ def main() -> None:
     pca_plot = plot_spectral(pca_vals, out_dir, "reg-pca")
 
     qc_path = out_dir / "qc.h5ad"
-
+    qc_ad.write_h5ad(qc_path)
     #  Upload if requested
     if args.report_to_gcs:
         _try_gsutil_cp([qc_path, d_plot, pca_plot], args.report_to_gcs)
