@@ -312,6 +312,15 @@ def main() -> None:
     K_sub = dcol_pca0(X_sub, nPC_max=n_pcs, Scale=True)
     vecs = K_sub["vecs"]  # shape n_genes x n_pcs
 
+    # --- Inspect DCOL spectrum numerically ---
+    vals = np.asarray(K_sub["vals"], float)
+    var_ratio = vals / vals.sum()
+    cum_ratio = np.cumsum(var_ratio)
+
+    print("[dcol_pca] eigenvalues + variance fractions:")
+    for i, (lam, vr, cr) in enumerate(zip(vals, var_ratio, cum_ratio), start=1):
+        print(f"  PC{i:2d}: eig={lam:9.4f}, frac={vr:7.4f}, cum={cr:7.4f}")
+
     # Project all cells using the same gene loadings
     X_full = qc_ad.X
     X_proj_full = X_full @ vecs
@@ -324,7 +333,12 @@ def main() -> None:
     sc.tl.pca(qc_ad, n_comps=n_pcs, use_highly_variable=False, zero_center=False)
 
     pca_vals = qc_ad.uns["pca"]["variance"]
-    pca_plot = plot_spectral(pca_vals, out_dir, "reg-pca")
+    pca_var = pca_vals / pca_vals.sum()
+    pca_cum = np.cumsum(pca_var)
+    print("[pca] eigenvalues + variance fractions:")
+    for i, (lam, vr, cr) in enumerate(zip(pca_vals, pca_var, pca_cum), start=1):
+        print(f"  PC{i:2d}: eig={lam:9.4f}, frac={vr:7.4f}, cum={cr:7.4f}")
+        pca_plot = plot_spectral(pca_vals, out_dir, "reg-pca")
 
     qc_path = out_dir / "qc.h5ad"
     qc_ad.write_h5ad(qc_path)
