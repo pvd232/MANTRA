@@ -308,7 +308,7 @@ def main() -> None:
 
     print()
     for col in ad.var.columns:
-        print(f"self.{col}: {type(ad.obs.columns[col])}", col, flush=True)
+        print(f"self.{col}: {type(ad.var.columns[col])}", col, flush=True)
 
     # QC processing
     qc_ad = prep(ad.copy(), params)
