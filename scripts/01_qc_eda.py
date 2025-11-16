@@ -320,10 +320,9 @@ def main() -> None:
     X_proj_full = X_full @ vecs
     qc_ad.obsm["X_dcolpca"] = X_proj_full
     d_plot = plot_spectral(K_sub["vals"], out_dir, "dcol-pca")
-    qc_ad.write_h5ad(d_plot)
 
     # =========================
-    # Optional: regular PCA for comparison
+    # regular PCA ablation
     # =========================
     sc.tl.pca(qc_ad, n_comps=n_pcs, use_highly_variable=False, zero_center=False)
 
