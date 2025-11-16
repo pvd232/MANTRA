@@ -314,7 +314,8 @@ def main() -> None:
 
     # --- Inspect DCOL spectrum numerically ---
     vals = np.asarray(K_sub["vals"], float)
-    var_ratio = vals / vals.sum()
+    pos = vals[vals > 0]
+    var_ratio = pos / pos.sum()
     cum_ratio = np.cumsum(var_ratio)
 
     print("[dcol_pca] eigenvalues + variance fractions:")
