@@ -290,8 +290,6 @@ def report(ad: sc.AnnData, args: Dict[str], params: Dict[str]) -> None:
 
 
 def main() -> None:
-    print("start", flush=True)
-
     args = build_argparser().parse_args()
     params: Dict[str, Any] = yaml.safe_load(Path(args.params).read_text())
 
@@ -304,11 +302,11 @@ def main() -> None:
         ad.X = sparse.csr_matrix(ad.X)
 
     for col in ad.obs.columns:
-        print(f"self.{col}: {type(ad.obs.columns[col])}", col, flush=True)
+        print(f"self.{col}: {type(ad.obs.columns[col])}", flush=True)
 
     print()
     for col in ad.var.columns:
-        print(f"self.{col}: {type(ad.var.columns[col])}", col, flush=True)
+        print(f"self.{col}: {type(ad.var.columns[col])}", flush=True)
 
     # QC processing
     qc_ad = prep(ad.copy(), params)
