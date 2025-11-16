@@ -281,9 +281,6 @@ def main() -> None:
     # QC processing
     qc_ad = prep(ad.copy(), params)
 
-    # ---- persist ----
-    qc_d_path = out_dir / "unperturbed_qc.h5ad"
-    qc_ad.write_h5ad(qc_d_path)
     # ---- reporting (optional) ----
     # report(qc_ad)
 
@@ -329,11 +326,11 @@ def main() -> None:
     pca_vals = qc_ad.uns["pca"]["variance"]
     pca_plot = plot_spectral(pca_vals, out_dir, "reg-pca")
 
-    qc_pca_path = out_dir / "qc.h5ad"
+    qc_path = out_dir / "qc.h5ad"
 
     #  Upload if requested
     if args.report_to_gcs:
-        _try_gsutil_cp([qc_d_path, qc_pca_path, d_plot, pca_plot], args.report_to_gcs)
+        _try_gsutil_cp([qc_path, d_plot, pca_plot], args.report_to_gcs)
 
 
 if __name__ == "__main__":
