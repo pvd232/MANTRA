@@ -21,10 +21,20 @@ DOWNLOADER=""
 if command -v aria2c >/dev/null 2>&1; then
   echo "Downloader: aria2c"
   # single connection, robust resume; figshare presigned redirects can be touchy with multi-part
-  DOWNLOADER="aria2c --check-integrity=false --continue=true -x1 -s1 --retry-wait=3 --max-tries=${RETRIES} -d \"${WORKDIR}\" -o"
+    DOWNLOADER="aria2c \
+    --check-integrity=false \
+    --continue=true \
+    -x1 -s1 \
+    --retry-wait=3 \
+    --max-tries=${RETRIES} \
+    --show-console-readout=true \
+    --console-log-level=notice \
+    --summary-interval=1 \
+    -d \"${WORKDIR}\" \
+    -o"
 else
   echo "Downloader: curl"
-  DOWNLOADER="curl -L --fail --retry ${RETRIES} --retry-all-errors --retry-delay 3 -C - -o"
+  DOWNLOADER="curl -L --fail --retry ${RETRIES} --retry-all-errors --retry-delay 3 -C - --progress-bar -o"
 fi
 
 
