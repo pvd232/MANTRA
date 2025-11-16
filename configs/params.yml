@@ -1,9 +1,9 @@
 seed: 7
-hvg_n_top_genes: 500
+hvg_n_top_genes: 1000
 
 spec:
-  n_pcs: 3
-  dcol_max_cells: 5
+  n_pcs: 10
+  dcol_max_cells: 200
 
 
 cnmf:

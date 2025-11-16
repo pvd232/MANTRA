@@ -109,33 +109,22 @@ def is_integer_like_matrix(M) -> bool:
 
 
 def prep(ad: sc.AnnData, params: Dict[str, Any]):
-    # Remove genes that are not statistically relevant
     n_cells = ad.n_obs
-    print("114", flush=True)
-    # gene must appear in >=0.1% of cells
+
+    # Remove genes that are not statistically relevant (< 0.1% of cells)
     min_cells = max(3, int(0.001 * n_cells))
     sc.pp.filter_genes(ad, min_cells=min_cells)
-    print("118", flush=True)
 
-    # Remove empty droplets
+    # Remove empty droplets (cells with no detected genes)
     sc.pp.filter_cells(ad, min_genes=int(params["qc"]["min_genes"]))
-    print("122", flush=True)
+
+    # Drop zero-count cells
+    totals = np.ravel(ad.X.sum(axis=1))
+    ad = ad[totals > 0, :].copy()
 
     # Cells with high percent of mitochondrial DNA are dying or damaged
     ad = ad[ad.obs["mitopercent"] < float(params["qc"]["max_pct_mt"])].copy()
-    print("126", flush=True)
 
-    # def _as_sparse32(M):
-    #     if not sparse.issparse(M):
-    #         M = sparse.csr_matrix(M)
-    #     return M.astype("float32", copy=False)
-
-    # ad.X = _as_sparse32(ad.X)
-
-    # drop zero-count cells (on counts if present)
-    # Xc = ad.layers[counts_layer] if counts_layer else ad.X
-
-    print("139", flush=True)
     print("AnnData layers:", list(ad.layers.keys()), flush=True)
     print("AnnData obs columns:", list(ad.obs.columns), flush=True)
     print("AnnData var columns:", list(ad.var.columns), flush=True)
@@ -144,8 +133,6 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     print("n_obs, n_vars:", ad.n_obs, ad.n_vars, flush=True)
 
     # Check for inf/nan in means explicitly:
-    from scipy import sparse
-
     X = ad.X
     if sparse.issparse(X):
         means = np.asarray(X.mean(axis=0)).ravel()
@@ -156,14 +143,13 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     print("Means min/max:", np.nanmin(means), np.nanmax(means), flush=True)
     print("# non-finite means:", np.sum(~np.isfinite(means)), flush=True)
 
-    # no raw counts object, must use ad.X
+    # No raw counts object so we must use ad.X
     sc.pp.highly_variable_genes(
         ad,
         n_top_genes=int(params["hvg_n_top_genes"]),
         flavor="seurat_v3",
         subset=False,
     )
-    print("159", flush=True)
 
     ad = ad[:, ad.var["highly_variable"]].copy()
 
@@ -171,7 +157,6 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]):
     sc.pp.normalize_total(ad, target_sum=1e4)
     sc.pp.log1p(ad)
 
-    # sc.pp.scale(ad, max_value=10)
     return ad
 
 
@@ -317,8 +302,7 @@ def main() -> None:
     ad = sc.read_h5ad(args.ad)
     if not sparse.issparse(ad.X):
         ad.X = sparse.csr_matrix(ad.X)
-    # ad.X = ad.X.astype("float32", copy=False)
-    print("284", flush=True)
+
     for col in ad.obs.columns:
         print("obs col:", col, flush=True)
     for col in ad.var.columns:
@@ -326,12 +310,10 @@ def main() -> None:
 
     # QC processing
     qc_ad = prep(ad.copy(), params)
-    print("305", flush=True)
 
     # ---- persist ----
     qc_d_path = out_dir / "unperturbed_qc.h5ad"
     qc_ad.write_h5ad(qc_d_path)
-    print("[main] after write_h5ad", flush=True)
     # ---- reporting (optional) ----
     # report(qc_ad)
 
@@ -375,7 +357,6 @@ def main() -> None:
     # =========================
     # Optional: regular PCA for comparison
     # =========================
-    # sc.tl.pca(qc_ad, n_comps=n_pcs, use_highly_variable=False)
     # sc.tl.pca(qc_ad, n_comps=n_pcs, use_highly_variable=False, zero_center=False)
 
     # pca_vals = qc_ad.uns["pca"]["variance"]
