@@ -3,7 +3,7 @@ hvg_n_top_genes: 2000
 
 spec:
   n_pcs: 20
-  dcol_max_cells: 500
+  dcol_max_cells: 5000
 
 
 cnmf:
