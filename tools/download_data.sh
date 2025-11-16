@@ -9,13 +9,12 @@ set -euo pipefail
 : "${CONCURRENCY:=4}"                              # parallel uploads (gsutil -m)
 : "${RETRIES:=20}"                                 # network retry attempts
 
-# Example use
-'''
-WORKDIR="data/raw/K562_gwps" \
-PREFIX="data/raw/K562_gwps" \
-MANIFEST="configs/manifest_k562_gwps_raw_singlecell.csv" \
-./download_data.sh
-'''
+# Example use with default configs
+# WORKDIR="data/raw/K562_gwps" \
+# PREFIX="data/raw/K562_gwps" \
+# MANIFEST="configs/manifest_k562_gwps_raw_singlecell.csv" \
+# ./download_data.sh
+
 # Optional: pick downloader (aria2c if installed, else curl)
 DOWNLOADER=""
 # --- replace with this ---
