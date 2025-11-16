@@ -330,8 +330,7 @@ def main() -> None:
     pca_vals = qc_ad.uns["pca"]["variance"]
     pca_plot = plot_spectral(pca_vals, out_dir, "reg-pca")
 
-    qc_pca_path = out_dir / "pca.h5ad"
-    qc_ad.write_h5ad(qc_pca_path)
+    qc_pca_path = out_dir / "qc.h5ad"
 
     #  Upload if requested
     if args.report_to_gcs:

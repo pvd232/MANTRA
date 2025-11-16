@@ -419,5 +419,6 @@ def plot_spectral(
     axes[1].set_ylim(0, 1.05)
 
     k_png = out_dir / f"{title_prefix}.png"
-    plt.savefig(k_png, bbox_inches="tight", dpi=160,)
+    plt.savefig(k_png, bbox_inches="tight", dpi=160)
+    plt.close(fig)
     return k_png
