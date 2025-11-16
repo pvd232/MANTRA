@@ -304,9 +304,11 @@ def main() -> None:
         ad.X = sparse.csr_matrix(ad.X)
 
     for col in ad.obs.columns:
-        print("obs col:", col, flush=True)
+        print(f"self.{col}: {type(ad.obs.columns[col])}", col, flush=True)
+
+    print()
     for col in ad.var.columns:
-        print("var col:", col, flush=True)
+        print(f"self.{col}: {type(ad.obs.columns[col])}", col, flush=True)
 
     # QC processing
     qc_ad = prep(ad.copy(), params)
@@ -342,32 +344,30 @@ def main() -> None:
     if sparse.issparse(qc_dcol.X):
         X_sub = X_sub.toarray()
 
-    print("[main] before DCOL block", flush=True)
     K_sub = dcol_pca0(X_sub, nPC_max=n_pcs, Scale=True)
     vecs = K_sub["vecs"]  # shape n_genes x n_pcs
 
     # Project all cells using the same gene loadings
     X_full = qc_ad.X
     X_proj_full = X_full @ vecs
-    print("[main] after DCOL block", flush=True)
     qc_ad.obsm["X_dcolpca"] = X_proj_full
     d_plot = plot_spectral(K_sub["vals"], out_dir, "dcol-pca")
     qc_ad.write_h5ad(d_plot)
-    print("[main] b4 PCA", flush=True)
+
     # =========================
     # Optional: regular PCA for comparison
     # =========================
-    # sc.tl.pca(qc_ad, n_comps=n_pcs, use_highly_variable=False, zero_center=False)
+    sc.tl.pca(qc_ad, n_comps=n_pcs, use_highly_variable=False, zero_center=False)
 
-    # pca_vals = qc_ad.uns["pca"]["variance"]
-    # pca_plot = plot_spectral(pca_vals, out_dir, "reg-pca")
+    pca_vals = qc_ad.uns["pca"]["variance"]
+    pca_plot = plot_spectral(pca_vals, out_dir, "reg-pca")
 
-    # qc_pca_path = out_dir / "pca.h5ad"
-    # qc_ad.write_h5ad(qc_pca_path)
+    qc_pca_path = out_dir / "pca.h5ad"
+    qc_ad.write_h5ad(qc_pca_path)
 
-    # Upload if requested
-    # if args.report_to_gcs:
-    #     _try_gsutil_cp([qc_d_path, qc_pca_path, d_plot, pca_plot], args.report_to_gcs)
+    #  Upload if requested
+    if args.report_to_gcs:
+        _try_gsutil_cp([qc_d_path, qc_pca_path, d_plot, pca_plot], args.report_to_gcs)
 
 
 if __name__ == "__main__":
