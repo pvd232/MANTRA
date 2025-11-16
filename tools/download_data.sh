@@ -39,7 +39,7 @@ fi
 
 
 mkdir -p "${WORKDIR}"
-cd "${WORKDIR}"
+# cd "${WORKDIR}"
 require() {
   command -v "$1" >/dev/null 2>&1 || { echo "fatal: missing dependency: $1" >&2; exit 1; }
 }
@@ -51,9 +51,9 @@ require awk
 require sed
 
 # Resolve MANIFEST to an absolute path before cd'ing into WORKDIR
-if [[ "${MANIFEST}" != /* ]]; then
-  MANIFEST="$(pwd)/${MANIFEST}"
-fi
+# sanity: manifest exists?
+[[ -f "${MANIFEST}" ]] || { echo "fatal: manifest not found: ${MANIFEST}" >&2; exit 1; }
+
 echo "Using bucket: gs://${BUCKET}"
 echo "Manifest: ${MANIFEST}"
 echo "Staging to: ${WORKDIR}"
