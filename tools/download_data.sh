@@ -7,39 +7,21 @@ set -euo pipefail
 : "${MANIFEST:=configs/download_manifest.csv}"     # csv with: url,dst_relpath[,sha256]
 : "${WORKDIR:=/tmp/mantra_downloads}"              # tmp local staging dir
 : "${CONCURRENCY:=4}"                              # parallel uploads (gsutil -m)
-: "${RETRIES:=20}"                                 # network retry attempts
-
-# Example use with default configs running from MANTRA root
-# WORKDIR="$(pwd)/data/raw/K562_gwps" \
-# PREFIX="data/raw/K562_gwps" \
-# MANIFEST="$(pwd)/configs/download_manifest.csv" \
-# ./tools/download_data.sh
+: "${RETRIES:=10}"                                 # network retry attempts
 
 # Optional: pick downloader (aria2c if installed, else curl)
 DOWNLOADER=""
 # --- replace with this ---
 if command -v aria2c >/dev/null 2>&1; then
-  echo "Downloader: aria2c"
   # single connection, robust resume; figshare presigned redirects can be touchy with multi-part
-    DOWNLOADER="aria2c \
-    --check-integrity=false \
-    --continue=true \
-    -x1 -s1 \
-    --retry-wait=3 \
-    --max-tries=${RETRIES} \
-    --show-console-readout=true \
-    --console-log-level=notice \
-    --summary-interval=1 \
-    -d \"${WORKDIR}\" \
-    -o"
+  DOWNLOADER="aria2c --check-integrity=false --continue=true -x1 -s1 --retry-wait=3 --max-tries=${RETRIES} -d \"${WORKDIR}\" -o"
 else
-  echo "Downloader: curl"
-  DOWNLOADER="curl -L --fail --retry ${RETRIES} --retry-all-errors --retry-delay 3 -C - --progress-bar -o"
+  DOWNLOADER="curl -L --retry ${RETRIES} --retry-connrefused --retry-delay 3 -C - -o"
 fi
 
 
 mkdir -p "${WORKDIR}"
-# cd "${WORKDIR}"
+
 require() {
   command -v "$1" >/dev/null 2>&1 || { echo "fatal: missing dependency: $1" >&2; exit 1; }
 }
@@ -50,7 +32,6 @@ require python3
 require awk
 require sed
 
-# Resolve MANIFEST to an absolute path before cd'ing into WORKDIR
 # sanity: manifest exists?
 [[ -f "${MANIFEST}" ]] || { echo "fatal: manifest not found: ${MANIFEST}" >&2; exit 1; }
 
@@ -76,7 +57,7 @@ mapfile -t LINES < <(awk -F, '
    print $1","$2","$3}
 ' "${MANIFEST}")
 
-download_file() {
+download_one() {
   local url="$1"
   local rel="$2"
   local sha="$3"
@@ -89,7 +70,8 @@ download_file() {
   local dest_local="${WORKDIR}/$(basename "${rel}")"
   local dest_gs="gs://${BUCKET}/${PREFIX}/${rel}"
 
-  echo "==> Fetch: ${url}"
+   echo "==> Fetch: ${url}"
+  # aria2c/curl -o MUST be a filename, not a full path with directories repeated
   filename="$(basename "${rel}")"
 
   # shellcheck disable=SC2086
@@ -97,43 +79,18 @@ download_file() {
     echo "   aria2/curl primary attempt failed; retrying once with curl single-stream..."
     curl -L --retry ${RETRIES} --retry-connrefused --retry-delay 3 -C - -o "${dest_local}" "${url}"
   fi
-  # Return the local path on stdout so caller can capture it.
-  echo "${dest_local}"
-
-}
-
-upload_file() {
-  local rel="$1"
-  local dest_local="$2"
-
-  local dest_gs="gs://${BUCKET}/${PREFIX}/${rel}"
-
-  # Clean up any 0-byte placeholder in GCS (from prior failed stream) so -n won't skip it.
-  if gsutil stat "${dest_gs}" >/dev/null 2>&1; then
-    local gsize
-    gsize=$(gsutil stat "${dest_gs}" | awk '/Content-Length:/ {print $3}')
-    if [[ "${gsize:-}" == "0" ]]; then
-      echo "   found 0-byte object at ${dest_gs}; removing so we can reupload"
-      gsutil rm -f "${dest_gs}" || true
-    fi
-  fi
-
-  # Sanity: require a non-empty local file before uploading
-  if [[ ! -s "${dest_local}" ]]; then
-    echo "!! local file missing or empty: ${dest_local}" >&2
-    return 1
-  fi
 
   echo "==> Upload: ${dest_local} -> ${dest_gs}"
   gsutil "${GSUTIL_OPTS[@]}" cp -n "${dest_local}" "${dest_gs}"
+
   echo "==> Done: ${rel}"
 }
 
-# --- drive the rows (sequential; bump with xargs -P if you want later) ---
+# loop (sequential is simplest/reliable; bump to parallel with xargs -P if desired)
 for line in "${LINES[@]}"; do
   IFS=',' read -r URL REL SHA <<<"${line}"
-  local_path="$(download_file "${URL}" "${REL}" "${SHA:-}")"
-  upload_file "${REL}" "${local_path}"
+  # ensure subdirs exist in the bucket path (gsutil cp will create as needed)
+  download_one "${URL}" "${REL}" "${SHA:-}"
 done
 
 echo
