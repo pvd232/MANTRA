@@ -114,7 +114,7 @@ def _try_gsutil_cp(paths: List[Path], gs_prefix: str) -> Dict[str, List[str]]:
         try:
             # Use -n so we don't overwrite; capture output for debugging
             proc = subprocess.run(
-                ["gsutil", "-m", "cp", "-n", str(p), f"{gs_prefix}/"],
+                ["gsutil", "-m", "cp", str(p), f"{gs_prefix}/"],
                 check=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
