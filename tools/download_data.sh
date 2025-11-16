@@ -9,6 +9,13 @@ set -euo pipefail
 : "${CONCURRENCY:=4}"                              # parallel uploads (gsutil -m)
 : "${RETRIES:=20}"                                 # network retry attempts
 
+# Example use
+'''
+WORKDIR="data/raw/K562_gwps" \
+PREFIX="data/raw/K562_gwps" \
+MANIFEST="configs/manifest_k562_gwps_raw_singlecell.csv" \
+./download_data.sh
+'''
 # Optional: pick downloader (aria2c if installed, else curl)
 DOWNLOADER=""
 # --- replace with this ---
@@ -32,8 +39,14 @@ require python3
 require awk
 require sed
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${SCRIPT_DIR}"
+
+MANIFEST_PATH="${MANIFEST}"
+[[ "${MANIFEST}" != /* ]] && MANIFEST_PATH="${REPO_ROOT}/${MANIFEST}"
+
 # sanity: manifest exists?
-[[ -f "${MANIFEST}" ]] || { echo "fatal: manifest not found: ${MANIFEST}" >&2; exit 1; }
+[[ -f "${MANIFEST_PATH}" ]] || { echo "fatal: manifest not found: ${MANIFEST_PATH}" >&2; exit 1; }
 
 echo "Using bucket: gs://${BUCKET}"
 echo "Manifest: ${MANIFEST}"
@@ -55,7 +68,7 @@ mapfile -t LINES < <(awk -F, '
    gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2);
    gsub(/^[[:space:]]+|[[:space:]]+$/, "", $3);
    print $1","$2","$3}
-' "${MANIFEST}")
+' "${MANIFEST_PATH}")
 
 download_file() {
   local url="$1"
