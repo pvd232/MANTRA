@@ -306,7 +306,7 @@ def main() -> None:
 
     print()
     for col in ad.var.columns:
-        print(f"self.{col}: {ad.obs[col].dtype}", flush=True)
+        print(f"self.{col}: {ad.var[col].dtype}", flush=True)
 
     # QC processing
     qc_ad = prep(ad.copy(), params)
