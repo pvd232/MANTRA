@@ -302,11 +302,11 @@ def main() -> None:
         ad.X = sparse.csr_matrix(ad.X)
 
     for col in ad.obs.columns:
-        print(f"self.{col}: {type(ad.obs.columns[col])}", flush=True)
+        print(f"self.{col}: {ad.obs[col].dtype}", flush=True)
 
     print()
     for col in ad.var.columns:
-        print(f"self.{col}: {type(ad.var.columns[col])}", flush=True)
+        print(f"self.{col}: {ad.obs[col].dtype}", flush=True)
 
     # QC processing
     qc_ad = prep(ad.copy(), params)
