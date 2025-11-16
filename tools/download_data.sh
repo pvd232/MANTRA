@@ -9,32 +9,14 @@ set -euo pipefail
 : "${CONCURRENCY:=4}"                              # parallel uploads (gsutil -m)
 : "${RETRIES:=20}"                                 # network retry attempts
 
-# Example use with default configs running from MANTRA root
-# WORKDIR="$(pwd)/data/raw/K562_gwps" \
-# PREFIX="data/raw/K562_gwps" \
-# MANIFEST="$(pwd)/configs/download_manifest.csv" \
-# ./tools/download_data.sh
-
 # Optional: pick downloader (aria2c if installed, else curl)
 DOWNLOADER=""
 # --- replace with this ---
 if command -v aria2c >/dev/null 2>&1; then
-  echo "Downloader: aria2c"
   # single connection, robust resume; figshare presigned redirects can be touchy with multi-part
-    DOWNLOADER="aria2c \
-    --check-integrity=false \
-    --continue=true \
-    -x1 -s1 \
-    --retry-wait=3 \
-    --max-tries=${RETRIES} \
-    --show-console-readout=true \
-    --console-log-level=notice \
-    --summary-interval=1 \
-    -d \"${WORKDIR}\" \
-    -o"
+  DOWNLOADER="aria2c --check-integrity=false --continue=true -x1 -s1 --retry-wait=3 --max-tries=${RETRIES} -d \"${WORKDIR}\" -o"
 else
-  echo "Downloader: curl"
-  DOWNLOADER="curl -L --fail --retry ${RETRIES} --retry-all-errors --retry-delay 3 -C - --progress-bar -o"
+  DOWNLOADER="curl -L --fail --retry ${RETRIES} --retry-all-errors --retry-delay 3 -C - -o"
 fi
 
 
