@@ -16,6 +16,9 @@ import yaml
 import matplotlib.pyplot as plt
 from dcol_pca import dcol_pca0, plot_spectral
 
+# Example use
+# conda run -n venv python scripts/01_qc_eda.py   --params configs/params.yml   --out out/interim   --ad data/raw/K562_gwps/k562_replogie.h5ad   --report   --report-to-gcs gs://mantra-mlfg-prod-uscentral1-8e7a/out/interim   --plot-max-cells 10000
+
 def build_argparser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description="QC + EDA for unperturbed cells.")
     ap.add_argument("--params", required=True, help="configs/params.yml")
@@ -37,67 +40,6 @@ def build_argparser() -> argparse.ArgumentParser:
         help="Max cells to plot (subsample if larger)",
     )
     return ap
-
-
-def _auto_normalize_total(
-    ad: sc.AnnData,
-    target_sum: float = 1e4,
-    frac_thresh: float = 0.2,
-    min_genes_flag: int = 3,
-) -> None:
-    """
-    Decide whether to use `exclude_highly_expressed` based on gene fractions,
-    then call sc.pp.normalize_total in-place.
-
-    frac_thresh: a gene is 'extreme' if in *some* cell it is >= this fraction
-                 of that cell's total counts.
-    min_genes_flag: if at least this many genes are 'extreme', we enable
-                    exclude_highly_expressed.
-    """
-    X = ad.X
-
-    # cell-wise totals on raw counts
-    totals = np.asarray(X.sum(axis=1)).ravel()
-    totals[totals == 0] = 1.0  # avoid div-by-zero
-
-    if sparse.issparse(X):
-        X_csc = X.tocsc()
-        n_genes = X_csc.shape[1]
-        max_frac = np.zeros(n_genes, dtype=float)
-
-        for j in range(n_genes):
-            col = X_csc.getcol(j)
-            if col.nnz == 0:
-                continue
-            rows = col.indices
-            data = col.data
-            fracs = data / totals[rows]
-            if fracs.size:
-                max_frac[j] = fracs.max()
-    else:
-        # dense: simple broadcasting
-        fracs = X / totals[:, None]
-        max_frac = fracs.max(axis=0)
-
-    extreme_genes = np.where(max_frac >= frac_thresh)[0]
-    n_extreme = len(extreme_genes)
-
-    exclude = n_extreme >= min_genes_flag
-
-    print(
-        f"[normalize_total] target_sum={target_sum:.0f}, "
-        f"exclude_highly_expressed={exclude} "
-        f"({n_extreme} genes with max_frac >= {frac_thresh:.2f})"
-    )
-
-    sc.pp.normalize_total(
-        ad,
-        target_sum=target_sum,
-        exclude_highly_expressed=exclude,
-        # we can pass the same threshold we used for diagnostics
-        max_fraction=frac_thresh,
-    )
-
 
 def is_integer_like_matrix(M) -> bool:
     data = M.data if sparse.issparse(M) else np.ravel(M)
@@ -296,8 +238,36 @@ def main() -> None:
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load AnnData
-    ad = sc.read_h5ad(args.ad)
+    # --- Load full AnnData in backed mode (no 61 GiB dense allocation) ---
+    ad_full = sc.read_h5ad(args.ad, backed="r")
+    print(
+        f"[load] full AnnData: n_obs={ad_full.n_obs}, n_vars={ad_full.n_vars}",
+        flush=True,
+    )
+
+    # --- Define unperturbed / control cells: gene == 'non-targeting' ---
+    if "gene" not in ad_full.obs:
+        raise ValueError(
+            "'gene' column not found in ad.obs. "
+            f"Available columns: {list(ad_full.obs.columns)}"
+        )
+
+    is_ctrl = np.asarray(ad_full.obs["gene"] == "non-targeting")
+    n_ctrl = int(is_ctrl.sum())
+    n_pert = int((~is_ctrl).sum())
+    print(f"[split] control/non-targeting cells: {n_ctrl}", flush=True)
+    print(f"[split] perturbed cells: {n_pert}", flush=True)
+
+    if n_ctrl == 0:
+        raise ValueError("No control cells with gene == 'non-targeting' found.")
+
+    # --- Materialize ONLY the non-targeting cells in memory ---
+    ad = ad_full[is_ctrl, :].to_memory()
+    print(
+        f"[load] using {ad.n_obs} non-targeting cells for QC + dim reduction",
+        flush=True,
+    )
+
     if not sparse.issparse(ad.X):
         ad.X = sparse.csr_matrix(ad.X)
 
