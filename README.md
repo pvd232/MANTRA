@@ -148,3 +148,4 @@ See `data/RAW_SOURCES.md` for exact endpoints and checksums.
 ## License / credits
 
 If you use this code or ideas, please cite the relevant datasets and methods (e.g., GWPS/Perturb-seq sources, SMR/TWAS, and any geometry-learning method used).
+# METIS
