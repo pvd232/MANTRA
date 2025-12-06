@@ -5,6 +5,10 @@ spec:
   n_pcs: 20
   dcol_max_cells: 3000
 
+qc:
+  min_cells: 500
+  min_genes: 200
+  max_pct_mt: 15
 
 cnmf:
   K: 50
@@ -16,13 +20,39 @@ traits:
   primary: MCH
   extras: [RDW, IRF]
 
-manifold:
-  mu_grid: [0.0, 0.1, 0.3, 1.0]  # used in ablations later
+eggfm_model:
+  hidden_dims: [512, 512, 512, 512]
 
-metrics:
-  calib_bins: 10
+eggfm_train:
+  batch_size: 2048
+  num_epochs: 50
+  lr: 1e-4
+  sigma: 0.1
+  weight_decay: 0.0
+  grad_clip: 1.0
+  early_stop_patience: 5
+  early_stop_min_delta: 1e-4
+  device: cuda
 
-qc:
-  min_cells: 500
-  min_genes: 200
-  max_pct_mt: 15
+grn_model:
+  n_layers: 3
+  gene_emb_dim: 64
+  hidden_dim: 128
+  dropout: 0.1
+  use_dose: false
+  n_traits: 0        # if > 0, build TraitHead
+  trait_hidden_dim: 64
+
+grn_train:
+  batch_size: 128
+  lr: 1e-3
+  weight_decay: 0.0
+  max_epochs: 50
+  grad_clip: 0.0
+  early_stop_patience: 0
+  early_stop_min_delta: 0.0
+
+grn_loss:
+  lambda_geo: 1.0
+  lambda_prog: 0.0
+  lambda_trait: 0.0
