@@ -10,7 +10,7 @@ import yaml
 import torch
 import scanpy as sc
 
-from mantra.eggfm.config import EnergyModelConfig, EnergyTrainConfig, EnergyModelBundle
+from mantra.eggfm.config import EnergyModelConfig, EnergyTrainConfig
 from mantra.eggfm.train_energy import train_energy_model
 
 def build_argparser() -> argparse.ArgumentParser:

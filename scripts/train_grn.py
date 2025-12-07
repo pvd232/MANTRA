@@ -24,6 +24,8 @@ from mantra.grn.models import GRNGNN, TraitHead
 from mantra.grn.priors import build_energy_prior_from_ckpt
 from mantra.grn.trainer import GRNTrainer
 
+from torch.utils.data import DataLoader
+
 def build_argparser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Train GRN GNN on K562 with energy prior")
 

@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mantra-mlfg"
+version = "0.1.0"
+description = "Manifold-aware GRN + EGGFM code for ML4FG project"
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+  "numpy",
+  "pandas",
+  "scipy",
+  "scikit-learn",
+  "anndata",
+  "scanpy>=1.9",
+  "h5py",
+  "pyarrow",
+  "numba",
+  "umap-learn",
+  "leidenalg",
+  "statsmodels",
+  "seaborn",
+  "torch",       # conda name is 'pytorch', pip name is 'torch'
+  "pyyaml",
+  "rich",
+  "tqdm",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy",
+  "types-requests",
+]
+
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["mantra*"]
+
+# Optional: expose nice CLI commands instead of `python scripts/...`
+[project.scripts]
+mantra-train-eggfm = "scripts.train_eggfm_energy:main"
+mantra-train-grn = "scripts.train_grn:main"
