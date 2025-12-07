@@ -17,7 +17,7 @@ class GRNInference:
       - grn_model
       - optional trait_head
       - A (gene graph), x_ref, W (cNMF loadings)
-      - energy_fn (HVG or embedding prior)
+      - energy_prior (HVG or embedding prior)
 
     Provides:
       - predict_batch(batch): uses same batch dict interface as training
@@ -29,7 +29,7 @@ class GRNInference:
         A: Tensor,
         x_ref: Tensor,
         W: Tensor,
-        energy_fn: nn.Module,
+        energy_prior: nn.Module,
         trait_head: Optional[TraitHead] = None,
         device: Optional[str] = None,
     ) -> None:
@@ -41,14 +41,14 @@ class GRNInference:
         self.A = A.to(self.device)
         self.x_ref = x_ref.to(self.device)
         self.W = W.to(self.device)
-        self.energy_fn = energy_fn.to(self.device).eval()
+        self.energy_prior = energy_prior.to(self.device).eval()
 
         for p in self.grn_model.parameters():
             p.requires_grad_(False)
         if self.trait_head is not None:
             for p in self.trait_head.parameters():
                 p.requires_grad_(False)
-        for p in self.energy_fn.parameters():
+        for p in self.energy_prior.parameters():
             p.requires_grad_(False)
 
     @torch.no_grad()
@@ -65,7 +65,7 @@ class GRNInference:
 
         deltaE_pred = self.grn_model(reg_idx=reg_idx, dose=dose, A=self.A)  # [B, G]
         x_hat = self.x_ref.unsqueeze(0) + deltaE_pred                       # [B, G]
-        energy = self.energy_fn(x_hat)                                      # [B]
+        energy = self.energy_prior(x_hat)                                      # [B]
 
         deltaP_pred = deltaE_pred @ self.W                                  # [B, K]
 

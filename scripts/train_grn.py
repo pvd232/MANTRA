@@ -187,7 +187,7 @@ def main() -> None:
         A=A,
         x_ref=x_ref,
         W=W,
-        energy_fn=energy_prior,
+        energy_prior=energy_prior,
         loss_cfg=grn_loss_cfg,
         train_cfg=grn_train_cfg,
         device=str(device),

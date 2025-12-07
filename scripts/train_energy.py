@@ -13,7 +13,7 @@ import numpy as np
 
 from mantra.config import EnergyModelConfig, EnergyTrainConfig
 from mantra.eggfm.trainer import train_energy_model
-
+from utils import subset_anndata
 
 def build_argparser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Train EGGFM energy model on K562")
@@ -26,19 +26,7 @@ def build_argparser() -> argparse.ArgumentParser:
     return p
 
 
-def subset_anndata(ad: sc.AnnData, n_cells_sample: int, random_state: int) -> sc.AnnData:
-    """
-    Randomly subset AnnData rows (cells).
-    If n_cells_sample >= n_obs or n_cells_sample <= 0, returns ad.copy().
-    """
-    n = ad.n_obs
-    m = min(int(n_cells_sample), n)
-    if m <= 0 or m == n:
-        return ad.copy()
 
-    rng = np.random.default_rng(random_state)
-    idx = rng.choice(n, size=m, replace=False)
-    return ad[idx].copy()
 
 def main() -> None:
     args = build_argparser().parse_args()

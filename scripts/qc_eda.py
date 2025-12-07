@@ -2,31 +2,50 @@
 from __future__ import annotations
 
 import argparse
-import json
-import os
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import numpy as np
-import pandas as pd
 import scanpy as sc  # type: ignore
 from scipy import sparse
-import subprocess
 import yaml
-import matplotlib.pyplot as plt
-from dcol_pca import dcol_pca0, plot_spectral
 
-# Example use
-# conda run -n venv python scripts/01_qc_eda.py   --params configs/params.yml   --out out/interim   --ad data/raw/K562_gwps/k562_replogie.h5ad   --report   --report-to-gcs gs://mantra-mlfg-prod-uscentral1-8e7a/out/interim   --plot-max-cells 10000
+"""
+Example:
+
+--- QC all cells --
+python scripts/qc_eda.py \
+  --params configs/params.yml \
+  --out data/interim/k562_all_qc.h5ad \
+  --ad data/raw/K562_gwps/k562_replogie.h5ad
+
+--- QC unperturbed cells --
+python scripts/qc_eda.py \
+  --params configs/params.yml \
+  --out data/interim/k562_unpert_qc.h5ad \
+  --ad data/raw/K562_gwps/k562_replogie.h5ad \
+  --pet
+"""
+
 
 def build_argparser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(description="QC + EDA for unperturbed cells.")
+    ap = argparse.ArgumentParser(description="QC + EDA for cells.")
     ap.add_argument("--params", required=True, help="configs/params.yml")
-    ap.add_argument("--out", required=True, help="out/interim")
-    ap.add_argument("--ad", required=True, help="path to unperturbed .h5ad")
+    ap.add_argument(
+        "--out",
+        required=True,
+        help="Output QC AnnData .h5ad file (e.g. data/interim/k562_qc.h5ad)",
+    )
+    ap.add_argument("--ad", required=True, help="Path to input .h5ad")
+    ap.add_argument(
+        "--pet",
+        action="store_true",
+        help="If set, restrict to non-targeting control cells (gene == 'non-targeting')",
+    )
     return ap
 
-def prep(ad: sc.AnnData, params: Dict[str, Any]):
+
+def prep(ad: sc.AnnData, params: Dict[str, Any]) -> sc.AnnData:
     n_cells = ad.n_obs
 
     # Remove genes that are not statistically relevant (< 0.1% of cells)
@@ -82,8 +101,8 @@ def main() -> None:
     args = build_argparser().parse_args()
     params: Dict[str, Any] = yaml.safe_load(Path(args.params).read_text())
 
-    out_dir = Path(args.out)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # --- Load full AnnData in backed mode (no 61 GiB dense allocation) ---
     ad_full = sc.read_h5ad(args.ad, backed="r")
@@ -92,31 +111,41 @@ def main() -> None:
         flush=True,
     )
 
-    # --- Define unperturbed / control cells: gene == 'non-targeting' ---
-    if "gene" not in ad_full.obs:
-        raise ValueError(
-            "'gene' column not found in ad.obs. "
-            f"Available columns: {list(ad_full.obs.columns)}"
+    # Decide which cells to use
+    if args.pet:
+        # restrict to non-targeting controls in a full (perturbed+control) dataset
+        if "gene" not in ad_full.obs:
+            raise ValueError(
+                "'gene' column not found in ad.obs. "
+                f"Available columns: {list(ad_full.obs.columns)}"
+            )
+
+        is_ctrl = np.asarray(ad_full.obs["gene"] == "non-targeting")
+        n_ctrl = int(is_ctrl.sum())
+        n_pert = int((~is_ctrl).sum())
+        print(f"[split] control/non-targeting cells: {n_ctrl}", flush=True)
+        print(f"[split] perturbed cells: {n_pert}", flush=True)
+
+        if n_ctrl == 0:
+            raise ValueError("No control cells with gene == 'non-targeting' found.")
+
+        ad = ad_full[is_ctrl, :].to_memory()
+        print(
+            f"[load] using {ad.n_obs} non-targeting cells for QC + dim reduction",
+            flush=True,
+        )
+    else:
+        # use all cells from the input .h5ad
+        ad = ad_full.to_memory()
+        print(
+            f"[load] using all {ad.n_obs} cells for QC + dim reduction",
+            flush=True,
         )
 
-    is_ctrl = np.asarray(ad_full.obs["gene"] == "non-targeting")
-    n_ctrl = int(is_ctrl.sum())
-    n_pert = int((~is_ctrl).sum())
-    print(f"[split] control/non-targeting cells: {n_ctrl}", flush=True)
-    print(f"[split] perturbed cells: {n_pert}", flush=True)
-
-    if n_ctrl == 0:
-        raise ValueError("No control cells with gene == 'non-targeting' found.")
-
-    # --- Materialize ONLY the non-targeting cells in memory ---
-    ad = ad_full[is_ctrl, :].to_memory()
-    print(
-        f"[load] using {ad.n_obs} non-targeting cells for QC + dim reduction",
-        flush=True,
-    )
-
-    if not sparse.issparse(ad.X):
-        ad.X = sparse.csr_matrix(ad.X)
+    # ensure sparse CSR for downstream ops
+    from scipy import sparse as sp_sparse
+    if not sp_sparse.issparse(ad.X):
+        ad.X = sp_sparse.csr_matrix(ad.X)
 
     for col in ad.obs.columns:
         print(f"self.{col}: {ad.obs[col].dtype}", flush=True)
@@ -127,9 +156,9 @@ def main() -> None:
 
     # QC processing
     qc_ad = prep(ad.copy(), params)
-    print(f"[write] writing QC AnnData to {out_dir}", flush=True)
-    
-    qc_ad.write_h5ad(out_dir)
+
+    print(f"[write] writing QC AnnData to {out_path}", flush=True)
+    qc_ad.write_h5ad(out_path)
     print("[done]", flush=True)
 
 
