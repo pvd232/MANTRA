@@ -252,7 +252,7 @@ def compute_grn_losses(
     A: torch.Tensor,                           # [G, G]
     batch: dict[str, torch.Tensor],
     x_ref: torch.Tensor,                       # [G]
-    energy_prior: nn.Module,                   # EnergyScorerPrior
+    energy_prior: nn.Module,                      # EnergyScorerPrior
     W: torch.Tensor,                           # [G, K]
     loss_cfg: GRNLossConfig,
     trait_head: Optional[nn.Module] = None,
@@ -278,7 +278,7 @@ def compute_grn_losses(
 
     # 3) Geometric prior (frozen EGGFM)
     x_hat = x_ref.unsqueeze(0) + deltaE_pred   # [B, G]
-    energy = energy_prior(x_hat)               # [B]
+    energy = energy_prior(x_hat)                  # [B]
     L_geo = loss_cfg.lambda_geo * energy.mean()
 
     # 4) Program-level supervision

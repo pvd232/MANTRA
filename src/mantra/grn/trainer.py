@@ -10,15 +10,7 @@ from torch import nn, optim
 from torch.utils.data import DataLoader
 
 from mantra.grn.models import GRNGNN, TraitHead, GRNLossConfig, compute_grn_losses
-
-@dataclass
-class GRNTrainConfig:
-    lr: float = 1e-3
-    weight_decay: float = 0.0
-    max_epochs: int = 50
-    grad_clip: float = 0.0
-    early_stop_patience: int = 0      # 0 = off
-    early_stop_min_delta: float = 0.0
+from mantra.grn.config import GRNTrainConfig
 
 class GRNTrainer:
     """
@@ -31,7 +23,7 @@ class GRNTrainer:
             A=A,
             x_ref=x_ref,
             W=W,
-            energy_fn=hvg_prior or embed_prior,
+            energy_prior=hvg_prior or embed_prior,
             loss_cfg=loss_cfg,
             train_cfg=train_cfg,
             device="cuda",
@@ -45,7 +37,7 @@ class GRNTrainer:
         A,
         x_ref,
         W,
-        energy_fn: nn.Module,
+        energy_prior: nn.Module,
         loss_cfg: GRNLossConfig,
         train_cfg: GRNTrainConfig,
         device: Optional[str] = None,
@@ -59,7 +51,7 @@ class GRNTrainer:
         self.x_ref = x_ref.to(self.device)
         self.W = W.to(self.device)
 
-        self.energy_fn = energy_fn.to(self.device)
+        self.energy_prior = energy_prior.to(self.device)
         self.loss_cfg = loss_cfg
         self.train_cfg = train_cfg
 
@@ -201,7 +193,7 @@ class GRNTrainer:
             A=self.A,
             batch=batch,
             x_ref=self.x_ref,
-            energy_fn=self.energy_fn,
+            energy_prior=self.energy_prior,
             W=self.W,
             loss_cfg=self.loss_cfg,
             trait_head=self.trait_head,

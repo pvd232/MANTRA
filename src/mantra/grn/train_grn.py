@@ -20,7 +20,7 @@ from mantra.config import (
     EnergyTrainConfig,
 )
 from mantra.grn.dataset import K562RegDeltaDataset
-from mantra.grn.grn_model import GRNGNN, TraitHead
+from mantra.grn.models import GRNGNN, TraitHead
 from mantra.grn.priors import build_energy_prior_from_ckpt
 from mantra.grn.trainer import GRNTrainer
 
@@ -68,13 +68,12 @@ def build_argparser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Optional .npy cNMF loadings W [G,K]. If missing, uses identity [G,G].",
-    )
+    )    
     p.add_argument(
-        "--prior-type",
+        "--energy-ckpt",
         type=str,
-        default="hvg",
-        choices=["hvg", "embedding"],
-        help="Which energy prior to use: HVG baseline or embedding ablation",
+        required=True,
+        help="Path to pre-trained EGGFM energy checkpoint (.pt)",
     )
     return p
 
@@ -134,15 +133,22 @@ def main() -> None:
             f"Gene dimension mismatch: x_ref has {x_ref_np.shape[0]} genes, "
             f"but deltaE has {G}."
         )
+
     x_ref = torch.from_numpy(x_ref_np).to(device)
 
-    # ---- energy prior (HVG or embedding) ----
+    # ---- after you create train_ds / val_ds ----
+    train_loader = DataLoader(train_ds, batch_size=grn_train_cfg.batch_size, shuffle=True)
+
+    val_loader = None
+    if val_ds is not None:
+        val_loader = DataLoader(val_ds, batch_size=grn_train_cfg.batch_size, shuffle=False)
+
+    # ---- energy prior ----
     energy_prior = build_energy_prior_from_ckpt(
         ckpt_path=args.energy_ckpt,
         gene_names=qc_ad.var_names,
         device=device,
     )
-
 
     # ---- GRN model ----
     model = GRNGNN(
@@ -167,20 +173,18 @@ def main() -> None:
 
     # ---- trainer ----
     trainer = GRNTrainer(
-        model=model,
-        energy_prior=energy_prior,
+        grn_model=model,
+        trait_head=trait_head,
         A=A,
         x_ref=x_ref,
         W=W,
-        train_cfg=grn_train_cfg,
+        energy_fn=energy_prior,
         loss_cfg=grn_loss_cfg,
-        train_dataset=train_ds,
-        val_dataset=val_ds,
-        trait_head=trait_head,
+        train_cfg=grn_train_cfg,
+        device=str(device),
     )
 
-    trainer.train()
-
+    trainer.fit(train_loader, val_loader)
     # ---- save best checkpoint ----
     ckpt = {
         "model_state_dict": trainer.best_model_state,
