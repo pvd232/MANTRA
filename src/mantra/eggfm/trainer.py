@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
-from typing import Optional, Tuple
+from typing import Optional
 
 import numpy as np
 import torch
-from torch import nn, optim
+import scanpy as sc
+from torch import optim
 from torch.utils.data import DataLoader
 
 from mantra.eggfm.models import EnergyMLP
 from mantra.eggfm.dataset import AnnDataExpressionDataset
-from mantra.eggfm.config import EnergyTrainConfig
+from mantra.config import EnergyModelConfig, EnergyTrainConfig, EnergyModelBundle
+
 
 class EnergyTrainer:
     """
@@ -49,19 +50,19 @@ class EnergyTrainer:
 
         self.optimizer = optim.Adam(
             self.model.parameters(),
-            lr=train_cfg.lr,
-            weight_decay=train_cfg.weight_decay,
+            lr=float(train_cfg.lr),          # force-cast in case YAML gave a string
+            weight_decay=float(train_cfg.weight_decay),
         )
 
         self.best_loss: float = float("inf")
         self.best_state_dict: Optional[dict] = None
 
     def train(self) -> EnergyMLP:
-        sigma = self.train_cfg.sigma
-        grad_clip = self.train_cfg.grad_clip
-        early_stop_patience = self.train_cfg.early_stop_patience
-        early_stop_min_delta = self.train_cfg.early_stop_min_delta
-        num_epochs = self.train_cfg.num_epochs
+        sigma = float(self.train_cfg.sigma)
+        grad_clip = float(self.train_cfg.grad_clip)
+        early_stop_patience = int(self.train_cfg.early_stop_patience)
+        early_stop_min_delta = float(self.train_cfg.early_stop_min_delta)
+        num_epochs = int(self.train_cfg.num_epochs)
 
         self.model.train()
         epochs_without_improve = 0
@@ -108,7 +109,6 @@ class EnergyTrainer:
                 self.optimizer.step()
 
                 running_loss += loss.item() * xb.size(0)
-
             epoch_loss = running_loss / n_total
             print(
                 f"[Energy DSM] Epoch {epoch+1}/{num_epochs}  loss={epoch_loss:.6e}",
@@ -135,3 +135,61 @@ class EnergyTrainer:
             self.model.load_state_dict(self.best_state_dict)
 
         return self.model
+
+
+# --------------------------------------------------------------------
+# High-level convenience wrapper: AnnData -> EnergyModelBundle
+# --------------------------------------------------------------------
+
+def train_energy_model(
+    ad_prep: sc.AnnData,
+    model_cfg: EnergyModelConfig,
+    train_cfg: EnergyTrainConfig,
+) -> EnergyModelBundle:
+    """
+    Convenience wrapper used by scripts:
+
+      AnnData -> AnnDataExpressionDataset -> EnergyMLP -> EnergyTrainer
+
+    Trains an energy-based model on preprocessed AnnData using DSM
+    and returns an EnergyModelBundle.
+    """
+    # -------- dataset: HVG or PCA --------
+    latent_space = "hvg"  # promote to config later if you want
+    if latent_space == "hvg":
+        X = ad_prep.X
+    else:
+        if "X_pca" not in ad_prep.obsm:
+            sc.pp.pca(ad_prep, n_comps=50)
+        X = ad_prep.obsm["X_pca"]
+
+    dataset = AnnDataExpressionDataset(X)
+    n_genes = dataset.X.shape[1]
+
+    # record normalization
+    mean = dataset.mean  # [D]
+    std = dataset.std    # [D]
+    feature_names = np.array(ad_prep.var_names)
+
+    # -------- model --------
+    hidden_dims = tuple(model_cfg.hidden_dims)
+    model = EnergyMLP(
+        n_genes=n_genes,
+        hidden_dims=hidden_dims,
+    )
+
+    # -------- trainer --------
+    trainer = EnergyTrainer(
+        model=model,
+        dataset=dataset,
+        train_cfg=train_cfg,
+    )
+    best_model = trainer.train()
+
+    return EnergyModelBundle(
+        model=best_model,
+        mean=mean,
+        std=std,
+        feature_names=feature_names,
+        space=latent_space,
+    )

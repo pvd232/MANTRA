@@ -1,87 +1,209 @@
 # MANTRA — Manifold-Aware Network TRAit modeling
 
-> Entry point for an ML4FG project that couples a GRN prior (GWPS/Perturb-seq β), an optional manifold constraint, cNMF programs (W), and SMR/TWAS-based trait readout (theta). Interim scope: download + QC data, run EDA, fit cNMF, fit theta via weighted least squares (WLS), and produce a first DeltaE→DeltaTrait baseline with metrics and an ablation plan.
+> Entry point for an ML4FG project that couples a GRN prior (GWPS/Perturb-seq β), a learned cell-state manifold (EGGFM), cNMF programs (W), and SMR/TWAS-based trait readout (θ).  
+> Current scope: construct robust cell-state geometry in K562, train EGGFM energy models on HVG subsets, integrate embeddings into GRN + GNN pipelines, and prepare ΔE→ΔTrait ablations.
+
+---
+
+## Current status (Dec 2025)
+
+### **Data / preprocessing**
+
+- K562 GWPS (unperturbed) is QC’d and stored in AnnData:
+  - ~250k cells after stringent filtering.
+  - 3,000 highly variable genes annotated.
+- HVG subsets evaluated for EGGFM training stability:
+  - {50, 75, 100, 150, 200, 250, 500}
+  - Best DSM stability + smoothest loss curve achieved at **75 HVGs**.
+
+### **Manifold / embeddings**
+
+Stored in `K562_gwps_unperturbed_hvg_embeddings.h5ad`:
+
+- `X_hvg_trunc` — raw expression of top **150** HVGs.
+- `X_pca` — Scanpy PCA (20 PCs).
+- `X_diffmap` — Diffusion Map (20 components).
+- `X_umap` — UMAP (20D).
+- `X_phate` — optional, only if PHATE is installed.
+- `X_isomap` — optional; slow at this scale.
+- `X_spectral` — not necessary since Diffusion Map already captures Laplacian geometry.
+
+### **EGGFM / energy model**
+
+- DSM-trained energy models using HVG subsets.
+- **Best performing model**: **HVG=75**.
+- Checkpoints saved as:
+ - out/models/eggfm/eggfm_energy_k562_hvg75.pt
+ - out/models/eggfm/eggfm_energy_k562_hvg<N>.pt # other ablations
+
+
+Each checkpoint contains:
+- `state_dict`  
+- feature statistics  
+- input gene names  
+- architecture (hidden dims)  
+- EGGFM feature space metadata  
+
+### **Planned next steps**
+
+1. Construct EGGFM-derived metric and diffusion operator.
+2. Compare PCA / DiffMap / PHATE / EGGFM embeddings using ARI + TI stability.
+3. Train GRN-aware GNN on regulator→gene graph.
+4. Integrate manifold embeddings into ΔE→ΔTrait prediction.
+5. Perform full GRN × Manifold ablation grid.
 
 ---
 
 ## TL;DR deliverables (interim)
 
-- Data downloaded & QC’d (UMIs, %mito, HVGs).
-- Baselines: cNMF (W) on unperturbed; theta^(t) via WLS from SMR; DeltaE→DeltaTrait baseline + metrics (R², AUROC/AUPRC, calibration).
-- Ablation plan (2×2: GRN × Manifold) + compute budget.
+- QC’d K562 unperturbed dataset with 3k HVGs.
+- Multiple manifold embeddings on HVG-restricted space.
+- EGGFM energy model trained on 75 HVGs.
+- Ablation plan for embedding choice + GRN prior.
+- Documentation for reproducibility, compute, VM usage.
 
 ---
 
 ## Project map
 
-```
 data/
-  raw/                      # immutable sources (checksummed)
-  interim/                  # QC’d AnnData + HVGs
-  smr/                      # SMR/TWAS slices (per trait)
+raw/ # immutable sources, SHA-256 tracked
+interim/
+K562_gwps_unperturbed_qc.h5ad # QC’d dataset, 3k HVGs
+K562_gwps_unperturbed_hvg_embeddings.h5ad
+smr/ # SMR/TWAS slices per trait
+
 out/
-  interim/
-    qc_summary.csv
-    qc_violin.png, hvg.png
-    program_loadings_W.csv
-    theta_<trait>.csv
-    metrics_baseline_<trait>.csv
-    calibration_curve_<trait>.tsv
+interim/
+qc_summary.csv
+qc_violin.png
+hvg_rankplot.png
+program_loadings_W.csv
+theta_<trait>.csv
+metrics_baseline_<trait>.csv
+calibration_curve_<trait>.tsv
+models/
+eggfm/
+eggfm_energy_k562_hvg75.pt
+eggfm_energy_k562_hvg*.pt
+
 configs/
-  env.yml                   # conda env (locked)
-  paths.yml                 # URLs/DOIs for data sources
-  params.yml                # HVG count, K (programs), mu-grid, seeds
+env.yml
+paths.yml
+params.yml
+
 scripts/
-  00_fetch_data.py
-  01_qc_eda.py
-  02_cnmf.py
-  03_fit_theta_wls.py
-  04_deltaE_to_trait.py
-  05_metrics_and_plots.py
+00_fetch_data.py
+01_qc_eda.py
+02_cnmf.py
+03_fit_theta_wls.py
+04_deltaE_to_trait.py
+05_metrics_and_plots.py
+hvg_embed.py
+train_energy.py
+
 Makefile
-mypy.ini
-```
+
 
 ---
 
 ## Reproducibility protocol
 
-- **Provenance & immutability.** Record every source in `data/RAW_SOURCES.md` with URL/DOI and SHA-256. Primary sources: GWPS/Perturb-seq (K562), HCT116 dose strata, and curated RBC-trait summaries for SMR/TWAS.
-- **Configs over code.** Tunables live in `configs/params.yml` (HVGs, number of programs K, mu-grid, random seeds).
-- **Determinism.** Fixed seeds; NMF uses `nndsvda` initialization.
-- **Environment lock.** `configs/env.yml` (plus a `pip freeze` snapshot).
-- **Logging.** Each script writes a manifest JSON: inputs → outputs, SHA-256, git SHA, wall-time, seeds.
-- **Predeclared ablations.** 2×2 grid (GRN × Manifold); manifold smoother `(I + mu * L_M)^(-1) * DeltaE`.
+### **Provenance & immutability**
+- Every dataset logged in `data/RAW_SOURCES.md` with URL + SHA-256.
+
+### **Configs over code**
+Everything tunable is inside `configs/params.yml`:
+- `hvg_total`, `max_hvg`
+- EGGFM architecture
+- DiffMap/UMAP/PHATE params
+- seeds
+
+### **Determinism**
+- Fixed seeds for NumPy, PyTorch, Scanpy.
+- Track any nondeterministic GPU ops.
+
+### **Environment locking**
+- `configs/env.yml` mirrors exact dependencies.
+- `pip freeze` snapshot saved separately.
+
+### **Manifest logging**
+Each script writes a machine-readable manifest:
+- Inputs → outputs
+- SHA-256 hashes
+- git SHA
+- runtime
+- hyperparams
+
+### **Ablations**
+**2×2 GRN × Manifold grid**:
+
+| GRN | Manifold | Description |
+|-----|----------|-------------|
+| ✗ | ✗ | Program-only baseline |
+| ✓ | ✗ | GRN-only ΔE→ΔTrait baseline |
+| ✗ | ✓ | Geometry-only diffusion of ΔE |
+| ✓ | ✓ | Full model: GRN + manifold |
+
+**Embedding ablations**:
+- Raw HVG-150
+- PCA-20
+- DiffMap-20
+- UMAP-20
+- PHATE-20 (optional)
+- EGGFM-metric embedding (future milestone)
 
 ---
 
-## Methods (one screen)
+## Methods (current design)
 
-1) **GRN prior.** Predict expression change with a GRN: `DeltaE = beta * u` (from GWPS).
-2) **Manifold constraint (optional).** Learn geometry on unperturbed cells (e.g., EGGFM), build a Laplacian `L_M`, and smooth: `DeltaE_tilde = (I + mu * L_M)^(-1) * DeltaE`.
-3) **Program mapping.** Map to programs from cNMF: `Delta_a = W^T * DeltaE_tilde`.
-4) **Trait readout (SMR → theta).** Fit a weighted least-squares model of SMR gene effects onto the program matrix `W` to obtain `theta^(t)`.
+### **1. GRN prior (GWPS β)**
 
-**Prediction:** `DeltaTrait_hat^(t) = dot(theta^(t), Delta_a)`.
+\[
+\Delta E_{\text{GRN}} = \beta u
+\]
 
----
+### **2. Manifold constraint**
 
-## Ablations (fixed)
+Classical smoothing:
 
-1) **No-GRN / No-Manifold** — program-only baseline  
-2) **GRN / No-Manifold** — current interim baseline  
-3) **No-GRN / Manifold** — diffuse a data-only DeltaE  
-4) **GRN / Manifold** — apply manifold smoothing before `W` → `theta`
+\[
+\tilde{\Delta E} = (I + \mu L_M)^{-1} \Delta E
+\]
+
+EGGFM version (in progress):
+- Define metric from energy model.
+- Construct diffusion operator.
+- Evaluate TI robustness + ARI.
+
+### **3. Program mapping**
+
+\[
+\Delta a = W^\top \tilde{\Delta E}
+\]
+
+### **4. Trait readout (SMR→θ)**
+
+\[
+g^{(t)} \approx W \theta^{(t)}
+\]
+
+### **5. Prediction**
+
+\[
+\widehat{\Delta \text{Trait}}^{(t)} = \langle \theta^{(t)}, \Delta a \rangle
+\]
 
 ---
 
 ## Metrics scaffold
 
-- **Regression:** R²  
-- **Correlation:** Pearson and Spearman  
-- **Calibration:** slope, intercept, and Brier score  
-- **Sign prediction:** AUROC and AUPRC  
-- **(Optional) Manifold realism:** kNN-overlap and geodesic-path change
+- **R²**, Pearson, Spearman  
+- Calibration slope, intercept, Brier  
+- AUROC / AUPRC for sign prediction  
+- Manifold realism:
+  - kNN overlap
+  - geodesic distortion
 
 ---
 
@@ -90,61 +212,5 @@ mypy.ini
 ```bash
 conda env create -f configs/env.yml
 conda activate venv
-make all  # or run targets below
-```
-
-Common targets:
-
-```bash
-make data     # fetch raw files and write a manifest
-make qc       # QC + EDA → out/interim/*
-make cnmf     # fit cNMF → program_loadings_W.csv
-make theta    # fit theta via WLS → theta_<trait>.csv
-make baseline # predict + metrics → yhat & metrics files
-```
-
----
-
-## Update VM git repo:
-```bash
-gcloud compute ssh mantra-g2 --project=mantra-477901 --zone=us-west4-a -- \                                         
-  'bash -lc "
-    cd ~/MANTRA
-    git pull
-  "'
-```
-
-## Write over VM with GCS:
-```bash
-LOCAL_DIR="$HOME/MANTRA/data/raw/K562/essential"
-LOCAL_FILE="$LOCAL_DIR/K562_essential_normalized_singlecell_01.h5ad"
-
-GCS_URI="gs://mantra-mlfg-prod-uscentral1-8e7a/data/raw/K562/essential/K562_essential_normalized_singlecell_01.h5ad"
-
-mkdir -p "$LOCAL_DIR"
-rm -f "$LOCAL_FILE"        
-gsutil cp "$GCS_URI" "$LOCAL_FILE"
-
-echo "== GCS =="
-gsutil ls -l "$GCS_URI"         # shows size in bytes
-
-echo "== Local =="
-ls -lh "$LOCAL_FILE"            # human-readable (check it’s ~10–11 GiB)
-
-
-  "'
-```
-
-
-## Data sources
-
-- **GWPS (K562/HCT116):** for beta (regulator→gene effects) and dose strata (Q1–Q4).
-- **Causal genetics (UKB RBC traits):** SMR/TWAS slices used to fit `theta^(t)`.
-
-See `data/RAW_SOURCES.md` for exact endpoints and checksums.
-
----
-
-## License / credits
-
-If you use this code or ideas, please cite the relevant datasets and methods (e.g., GWPS/Perturb-seq sources, SMR/TWAS, and any geometry-learning method used).
+make data
+make qc

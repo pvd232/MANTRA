@@ -16,7 +16,7 @@ from pandas.api.types import is_numeric_dtype, is_categorical_dtype
 
 def inspect_h5ad(path: str) -> None:
     print(f"Loading {path}")
-    ad = sc.read_h5ad(path, backed=None)
+    ad = sc.read_h5ad(path, backed="r")
 
     print("\n=== AnnData overview ===")
     print(ad)

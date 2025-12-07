@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from torch import nn, Tensor
 
-from .models import EnergyMLP
+from mantra.eggfm.models import EnergyMLP
 
 
 class EnergyScorer:

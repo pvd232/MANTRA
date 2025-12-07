@@ -10,7 +10,7 @@ from torch import nn, optim
 from torch.utils.data import DataLoader
 
 from mantra.grn.models import GRNGNN, TraitHead, GRNLossConfig, compute_grn_losses
-from mantra.grn.config import GRNTrainConfig
+from mantra.config import GRNTrainConfig
 
 class GRNTrainer:
     """

@@ -1,13 +1,11 @@
 # src/mantra/config.py
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Sequence, Optional, List
 
 import numpy as np
-
-from mantra.eggfm.EnergyMLP import EnergyMLP  # adjust import if needed
+from torch import nn
 
 
 # =======================
@@ -17,7 +15,7 @@ from mantra.eggfm.EnergyMLP import EnergyMLP  # adjust import if needed
 @dataclass
 class EnergyModelConfig:
     """
-    Architecture config for EnergyMLP.
+    Architecture config for EnergyMLP (or any energy model).
     """
     hidden_dims: Sequence[int] = (512, 512, 512, 512)
 
@@ -37,7 +35,9 @@ class EnergyTrainConfig:
     early_stop_patience: int = 0        # 0 = off
     early_stop_min_delta: float = 0.0
 
-    device: Optional[str] = None        # None → auto ('cuda' if available else 'cpu')
+    device: Optional[str] = None
+    n_cells_sample: Optional[int] = None
+    max_hvg: Optional[int] = None
 
 
 @dataclass
@@ -45,11 +45,11 @@ class EnergyModelBundle:
     """
     Container for a trained energy model + normalization metadata.
     """
-    model: EnergyMLP
-    mean: np.ndarray          # [D]
-    std: np.ndarray           # [D]
+    model: nn.Module                   # keep this generic to avoid imports
+    mean: np.ndarray                   # [D]
+    std: np.ndarray                    # [D]
     feature_names: Optional[List[str]] = None  # e.g. gene IDs
-    space: str = "hvg"        # 'hvg', 'pca', 'embedding', ...
+    space: str = "hvg"                 # 'hvg', 'pca', 'embedding', ...
 
 
 # =======================

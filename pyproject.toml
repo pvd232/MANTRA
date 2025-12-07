@@ -42,8 +42,3 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["mantra*"]
-
-# Optional: expose nice CLI commands instead of `python scripts/...`
-[project.scripts]
-mantra-train-eggfm = "scripts.train_eggfm_energy:main"
-mantra-train-grn = "scripts.train_grn:main"

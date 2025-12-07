@@ -2,8 +2,7 @@
 
 from .models import EnergyMLP
 from .dataset import AnnDataExpressionDataset
-from .trainer import EnergyTrainer
-from .train_energy import train_energy_model
+from .trainer import EnergyTrainer, train_energy_model
 from .inference import EnergyScorer
 
 __all__ = [

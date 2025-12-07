@@ -11,29 +11,29 @@ import numpy as np
 import torch
 import scanpy as sc
 from scipy import sparse as sp_sparse
+from torch.utils.data import DataLoader
 
 from mantra.config import (
     GRNModelConfig,
     GRNTrainConfig,
     GRNLossConfig,
-    EnergyModelConfig,
-    EnergyTrainConfig,
 )
 from mantra.grn.dataset import K562RegDeltaDataset
 from mantra.grn.models import GRNGNN, TraitHead
 from mantra.grn.priors import build_energy_prior_from_ckpt
 from mantra.grn.trainer import GRNTrainer
 
-from torch.utils.data import DataLoader
 
 def build_argparser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Train GRN GNN on K562 with energy prior")
+    p = argparse.ArgumentParser(
+        description="Train GRN GNN on K562 with pre-trained EGGFM energy prior"
+    )
 
     p.add_argument(
         "--params",
         type=str,
         required=True,
-        help="YAML params file (contains grn_model, grn_train, grn_loss, eggfm_model, eggfm_train)",
+        help="YAML params file (must contain grn_model, grn_train, grn_loss)",
     )
     p.add_argument(
         "--out",
@@ -70,7 +70,7 @@ def build_argparser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Optional .npy cNMF loadings W [G,K]. If missing, uses identity [G,G].",
-    )    
+    )
     p.add_argument(
         "--energy-ckpt",
         type=str,
@@ -78,6 +78,7 @@ def build_argparser() -> argparse.ArgumentParser:
         help="Path to pre-trained EGGFM energy checkpoint (.pt)",
     )
     return p
+
 
 def main() -> None:
     args = build_argparser().parse_args()
@@ -94,14 +95,12 @@ def main() -> None:
     grn_train_cfg = GRNTrainConfig(**params.get("grn_train", {}))
     grn_loss_cfg = GRNLossConfig(**params.get("grn_loss", {}))
 
-    energy_model_cfg = EnergyModelConfig(**params.get("eggfm_model", {}))
-    energy_train_cfg = EnergyTrainConfig(**params.get("eggfm_train", {}))
-
-    # ---- load data ----
+    # ---- load AnnData ----
     qc_ad = sc.read_h5ad(args.ad)
 
+    # ---- datasets ----
     train_ds = K562RegDeltaDataset(Path(args.train_npz))
-    val_ds = (
+    val_ds: Optional[K562RegDeltaDataset] = (
         K562RegDeltaDataset(Path(args.val_npz))
         if args.val_npz is not None
         else None
@@ -112,16 +111,17 @@ def main() -> None:
 
     # ---- adjacency ----
     if args.adj is not None:
-        A_np = np.load(args.adj)
+        A_np = np.load(args.adj).astype(np.float32)
     else:
         A_np = np.eye(G, dtype=np.float32)
-    A = torch.from_numpy(A_np.astype(np.float32)).to(device)
+    A = torch.from_numpy(A_np).to(device)
 
     # ---- cNMF W ----
     if args.cnmf_W is not None:
         W_np = np.load(args.cnmf_W).astype(np.float32)  # [G,K]
     else:
-        W_np = np.eye(G, dtype=np.float32)              # identity, effectively disables L_prog
+        # identity: effectively disables program loss when lambda_prog > 0
+        W_np = np.eye(G, dtype=np.float32)
     W = torch.from_numpy(W_np).to(device)
 
     # ---- reference state x_ref ----
@@ -129,23 +129,30 @@ def main() -> None:
     if sp_sparse.issparse(X):
         X = X.toarray()
     X = np.asarray(X, dtype=np.float32)
-    x_ref_np = X.mean(axis=0)  # [G], simple default; you can replace with controls-only mean
+
+    x_ref_np = X.mean(axis=0)  # [G], default: mean over all cells
     if x_ref_np.shape[0] != G:
         raise ValueError(
             f"Gene dimension mismatch: x_ref has {x_ref_np.shape[0]} genes, "
-            f"but deltaE has {G}."
+            f"but ΔE has {G}."
         )
-
     x_ref = torch.from_numpy(x_ref_np).to(device)
 
-    # ---- after you create train_ds / val_ds ----
-    train_loader = DataLoader(train_ds, batch_size=grn_train_cfg.batch_size, shuffle=True)
-
+    # ---- dataloaders ----
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=grn_train_cfg.batch_size,
+        shuffle=True,
+    )
     val_loader = None
     if val_ds is not None:
-        val_loader = DataLoader(val_ds, batch_size=grn_train_cfg.batch_size, shuffle=False)
+        val_loader = DataLoader(
+            val_ds,
+            batch_size=grn_train_cfg.batch_size,
+            shuffle=False,
+        )
 
-    # ---- energy prior ----
+    # ---- energy prior (pretrained EGGFM) ----
     energy_prior = build_energy_prior_from_ckpt(
         ckpt_path=args.energy_ckpt,
         gene_names=qc_ad.var_names,
@@ -187,6 +194,7 @@ def main() -> None:
     )
 
     trainer.fit(train_loader, val_loader)
+
     # ---- save best checkpoint ----
     ckpt = {
         "model_state_dict": trainer.best_model_state,
@@ -201,11 +209,14 @@ def main() -> None:
         "W": W_np,
         "A": A_np,
         "x_ref": x_ref_np,
-        "prior_type": args.prior_type,
+        "prior_type": "energy_ckpt",  # we used a pre-trained EGGFM checkpoint
+        "energy_ckpt_path": str(Path(args.energy_ckpt).resolve()),
     }
+
     ckpt_path = out_dir / "grn_k562_energy_prior.pt"
     torch.save(ckpt, ckpt_path)
-    print(f"Saved GRN checkpoint to {ckpt_path}")
+    print(f"Saved GRN checkpoint to {ckpt_path}", flush=True)
+
 
 if __name__ == "__main__":
     main()
