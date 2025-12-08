@@ -85,7 +85,7 @@ grn_train:
   early_stop_min_delta: 0.0
 
 grn_loss:
-  lambda_geo: 0.1
+  lambda_geo: 1e-2
   lambda_prog: 0.0
   lambda_trait: 0.0
 

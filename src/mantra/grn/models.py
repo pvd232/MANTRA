@@ -281,8 +281,19 @@ def compute_grn_losses(
 
     # 3) Geometric prior (frozen EGGFM)
     x_hat = x_ref.unsqueeze(0) + deltaE_pred   # [B, G]
-    energy = energy_prior(x_hat)                  # [B]
-    L_geo = loss_cfg.lambda_geo * energy.mean()
+
+    # energy at current prediction
+    energy = energy_prior(x_hat)               # [B]
+
+    # energy at reference control point (x_ref is already in ckpt)
+    with torch.no_grad():
+        energy_ref = energy_prior(x_ref.unsqueeze(0)).mean()
+
+    # penalize energy ABOVE reference
+    rel_energy = energy - energy_ref           # can be ±
+    rel_energy_pos = torch.relu(rel_energy)    # only push down high-energy states
+
+    L_geo = float(loss_cfg.lambda_geo) * rel_energy_pos.mean()
 
     # 4) Program-level supervision
     deltaP_pred = deltaE_pred @ W              # [B, K]

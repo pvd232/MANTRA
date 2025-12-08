@@ -91,25 +91,29 @@ class GRNTrainer:
                 f"prog={train_stats['L_prog']:.4f} "
                 f"trait={train_stats['L_trait']:.4f}"
             )
-
             if val_loader is not None:
                 val_stats = self.eval_epoch(val_loader)
                 val_loss = val_stats["loss"]
-                msg += f" | val_loss={val_loss:.4f}"
-                improved = val_loss + cfg.early_stop_min_delta < best_val_loss
+                val_expr = val_stats["L_expr"]
+
+                # log both
+                msg += f" | val_loss={val_loss:.4f} val_expr={val_expr:.4f}"
+
+                # early stopping on *expression* only
+                improved = val_expr + cfg.early_stop_min_delta < best_val_loss
                 if improved:
-                    best_val_loss = val_loss
+                    best_val_loss = val_expr
                     best_state = self._snapshot_state()
-                    # NEW: expose best state for external saving
                     self.best_model_state = best_state["grn"]
                     self.best_trait_state = best_state.get("trait_head")
                     epochs_without_improve = 0
                 else:
                     epochs_without_improve += 1
             else:
-                improved = train_stats["loss"] + cfg.early_stop_min_delta < best_val_loss
+                train_expr = train_stats["L_expr"]
+                improved = train_expr + cfg.early_stop_min_delta < best_val_loss
                 if improved:
-                    best_val_loss = train_stats["loss"]
+                    best_val_loss = train_expr
                     best_state = self._snapshot_state()
                     self.best_model_state = best_state["grn"]
                     self.best_trait_state = best_state.get("trait_head")
