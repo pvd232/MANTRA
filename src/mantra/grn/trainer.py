@@ -268,10 +268,6 @@ def compute_grn_losses(
     if dose is not None:
         dose = dose.to(device)
 
-    A = A.to(device)
-    x_ref = x_ref.to(device)
-    W = W.to(device)
-
     # 1) ΔE prediction
     deltaE_pred = model(reg_idx=reg_idx, dose=dose, A=A)  # [B, G]
 
@@ -279,32 +275,35 @@ def compute_grn_losses(
     L_expr = ((deltaE_pred - deltaE_obs) ** 2).mean()
 
     # 3) Geometric prior (frozen EGGFM)
-    x_hat = x_ref.unsqueeze(0) + deltaE_pred   # [B, G]
+    if loss_cfg.lambda_geo != 0.0:
+        x_hat = x_ref.unsqueeze(0) + deltaE_pred   # [B, G]
 
-    # energy at current prediction
-    energy = energy_prior(x_hat)               # [B]
+        # energy at current prediction
+        energy = energy_prior(x_hat)               # [B]
 
-    # energy at reference control point (x_ref is already in ckpt)
-    with torch.no_grad():
-        energy_ref = energy_prior(x_ref.unsqueeze(0)).mean()
+        # energy at reference control point (cacheable)
+        if energy_ref is None:
+            with torch.no_grad():
+                energy_ref = energy_prior(x_ref.unsqueeze(0)).mean()
 
-    # penalize energy ABOVE reference
-    rel_energy = energy - energy_ref           # can be ±
-    rel_energy_pos = torch.relu(rel_energy)    # only push down high-energy states
+        rel_energy = energy - energy_ref           # [B]
+        rel_energy_pos = torch.relu(rel_energy)    # only penalize high-energy states
 
-    L_geo = float(loss_cfg.lambda_geo) * rel_energy_pos.mean()
+        L_geo = float(loss_cfg.lambda_geo) * rel_energy_pos.mean()
+    else:
+        L_geo = torch.zeros((), device=device)    
 
     # 4) Program-level supervision
     deltaP_pred = deltaE_pred @ W              # [B, K]
 
     L_prog = torch.zeros((), device=device)
-    if "deltaP_obs" in batch:
+    if "deltaP_obs" in batch and loss_cfg.lambda_prog != 0.0:
         deltaP_obs = batch["deltaP_obs"].to(device)
         L_prog = loss_cfg.lambda_prog * ((deltaP_pred - deltaP_obs) ** 2).mean()
-
+        
     # 5) Trait head (optional)
     L_trait = torch.zeros((), device=device)
-    if trait_head is not None and "deltaY_obs" in batch:
+    if trait_head is not None and "deltaY_obs" in batch and loss_cfg.lambda_trait != 0.0:
         deltaY_obs = batch["deltaY_obs"].to(device)
         deltaY_pred = trait_head(deltaP_pred)
         L_trait = loss_cfg.lambda_trait * ((deltaY_pred - deltaY_obs) ** 2).mean()
