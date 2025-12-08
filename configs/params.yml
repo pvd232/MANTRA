@@ -64,7 +64,7 @@ eggfm_train:
   early_stop_min_delta: 0.0
   device: cuda
   # n_cells_sample: 60000
-  # max_hvg: 50
+  max_hvg: 100
 
 grn_model:
   n_layers: 3
@@ -97,7 +97,7 @@ embeddings:
 
   use_hvg_only: true
   hvg_key: "highly_variable"
-  hvg_trunc: 150      # or null to use n_components
+  hvg_trunc: 100      # or null to use n_components
 
   run_hvg_trunc: true
   run_pca: true

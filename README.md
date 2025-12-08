@@ -1,11 +1,11 @@
-# MANTRA — Manifold-Aware Network TRAit Modeling
+# MANTRA — Manifold-Aware Network TRAit Model
 
 A research-grade framework for **geometry-aware gene regulatory modeling** using:
 
 - **EGGFM** (Energy-Guided Geometric Flow Model) to learn a *cell-state manifold* from unperturbed K562 cells  
 - **GNN-based GRN propagation** for regulator → gene → program → trait inference  
 - **cNMF program discovery** for gene programs  
-- **SMR/TWAS-derived trait readout vectors**  
+- **SMR-derived trait readout vectors**  
 - A systematic **ablation pipeline** evaluating manifold constraints, GRN structure, HVG choices, and embedding choice (HVG expression vs PCA-50, etc.).
 
 This README is designed for new researchers, LLM agents, or collaborators who need a **full conceptual overview** of the system architecture, motivations, inductive biases, and experimental protocol.
@@ -18,10 +18,10 @@ The central objective of MANTRA is to model how **perturbations to gene regulato
 
 We integrate two main data sources:
 
-1. **GWPS / Perturb-seq (Regulator → ΔGene expression)**  
+1. **GWPS (Regulator → ΔGene expression)**  
    Provides causal β-like effects of targeted regulator perturbations on downstream gene expression (ΔE).
 
-2. **SMR/TWAS RBC trait genetics (Gene → trait effect sizes)**  
+2. **SMR RBC trait genetics (Gene → trait effect sizes)**  
    Provides trait-weight vectors learned from human genetic burden studies, mapping gene expression shifts to trait shifts.
 
 These together enable a *predictive causal chain*:  
@@ -30,7 +30,10 @@ These together enable a *predictive causal chain*:
 
 The core MANTRA innovation is adding a **manifold constraint** so that predicted ΔE respects the geometry of actual transcriptomic variation learned from **unperturbed** K562 cell states.
 
+
 ---
+
+<div style="page-break-after: always;"></div
 
 ## 2. Overall Architecture
 
@@ -38,13 +41,13 @@ The core MANTRA innovation is adding a **manifold constraint** so that predicted
 
 ```text
 Regulator
-   ↓ (GWPS / Perturb-seq ΔE)
+   ↓ (GWPS ΔE)
 Predicted ΔGene Expression (ΔE)
    ↓ (optional manifold regularization via EGGFM)
 Geometry-constrained ΔE
    ↓ (cNMF Wᵀ)
 ΔProgram Activity (Δa)
-   ↓ (SMR/TWAS-derived θ^(trait))
+   ↓ (SMR-derived θ^(trait))
 ΔTrait Prediction
 ```
 
@@ -56,6 +59,11 @@ Each layer is **separately testable** and participates in ablation experiments.
 
 EGGFM is trained via **denoising score matching (DSM)** on *unperturbed* (non-targeting control) K562 cells.  
 It learns a smooth energy function \(E(x)\) whose gradient \(-∇E(x)\) acts as a **score field** and induces a **geometry / metric** on the cell-state manifold.
+
+You can train EGGFM either on **HVG expression** (`ad.X` in the HVG-restricted space) or directly in a **precomputed embedding** stored in `ad.obsm` (e.g. `"X_pca"` or `"X_diffmap"`). This allows a clean comparison between:
+
+- EGGFM in raw HVG space, versus  
+- EGGFM on top of a classical embedding (e.g. PCA-50).
 
 ### 3.1 HVG selection and ablations
 
@@ -79,7 +87,7 @@ We currently focus on **HVG=75** and **HVG=100** as main EGGFM spaces, and compa
 
 One of these will be chosen as the **baseline HVG space**; the other remains as an explicit ablation.
 
-Typical DSM hyperparameters:
+Typical DSM hyperparameters (in `configs/params.yml` under `eggfm_model` / `eggfm_train`):
 
 - **σ (DSM noise scale)** ~ 0.15–0.2  
 - Hidden dimensions: e.g. `[256, 256]` MLP  
@@ -93,23 +101,23 @@ Each `train_energy.py` run produces an EGGFM checkpoint:
 - `model_cfg` (hidden dims, etc.)
 - `n_genes` (dimensionality of the feature space)
 - `var_names` (HVG gene names used for this model)
-- `mean`, `std` (standardization stats)
+- `mean`, `std` (standardization stats **in the chosen feature space**)
 - `space` (e.g. `"hvg"` or `"X_pca"`)
 
 Examples:
 
 - `out/models/eggfm/eggfm_energy_k562_hvg_hvg75.pt`
 - `out/models/eggfm/eggfm_energy_k562_hvg_hvg100.pt`
-- `out/models/eggfm/eggfm_energy_k562_X_pca_hvg50.pt` (EGGFM in PCA-50 space)
+- `out/models/eggfm/eggfm_energy_k562_X_pca_hvg50.pt`  *(EGGFM in PCA-50 space)*
 
 These checkpoints are then used both as:
 
-- **Energy priors** in the GRN loss (geometry term)
-- **Sources of HVG gene lists** for NPZ construction and cNMF alignment
+- **Energy priors** in the GRN loss (geometry term), and  
+- **Sources of HVG gene lists / feature names** for NPZ construction and cNMF alignment.
 
 ---
 
-## 4. HVG Ablation Summary (Current Understanding)
+## 4. HVG Ablation Summary
 
 > Note: numbers below are indicative / in-progress; final values will be reported in the project report.
 
@@ -128,7 +136,7 @@ We keep **HVG=75** and **HVG=100** as main baselines, and explicitly compare:
 
 - DSM loss curves  
 - GRN training loss decomposition (expr vs geo vs prog)  
-- Downstream ΔTrait performance
+- Downstream ΔTrait performance.
 
 ---
 
@@ -161,67 +169,90 @@ These embeddings serve as **comparison manifolds** for:
 
 ---
 
+<div style="page-break-after: always;"></div
+
 ## 6. GRN Model (Regulator → Gene GNN)
 
-A lightweight GNN (`GRNGNN`) propagates regulator effects through the gene network:
+A lightweight GNN (`GRNGNN`) propagates regulator effects through the gene network.
 
-- **Inputs per sample:**
-  - `reg_idx` — index of the perturbed regulator  
-  - `deltaE` — regulator-level ΔE in HVG space [N, G]  
-  - optional: `dose` (for HCT116-style dose-aware models; disabled for K562 baseline)
+**Inputs per sample** (from NPZ):
 
-- **Architecture:**
-  - Gene embeddings (learned)  
-  - Multi-layer message passing using adjacency `A ∈ ℝ^{G×G}`  
-  - Optional **TraitHead** on top of program space
+- `reg_idx` — index of the perturbed regulator  
+- `deltaE` — regulator-level ΔE in HVG space [N, G]  
+- `deltaP_obs` — observed ΔProgram activity, if W is provided  
+- `deltaY_obs` — observed ΔTrait (currently stubbed)  
+- `dose` — dummy 0.0 for K562 (no explicit dose modeling yet)
+
+**Architecture:**
+
+- Gene embeddings (learned)  
+- Multi-layer message passing using adjacency `A ∈ ℝ^{G×G}`  
+- Optional **TraitHead** on top of program space
 
 The GRN model is trained with a composite loss:
 
-- Expression reconstruction term \(L_{	ext{expr}}\)  
-- Geometry term \(L_{	ext{geo}}\) using the EGGFM energy prior  
-- Program term \(L_{	ext{prog}}\) using cNMF programs W  
-- Trait term \(L_{	ext{trait}}\) once trait readout is wired
+- **Expression term** \(L_{\text{expr}}\): ΔE reconstruction / fitting  
+- **Geometry term** \(L_{\text{geo}}\): encourages ΔE predictions to lie in low-energy regions under EGGFM  
+- **Program term** \(L_{\text{prog}}\): consistency with ΔP_obs via W  
+- **Trait term** \(L_{\text{trait}}\): trait supervision once ΔTrait labels are wired
 
 Ablations test:
 
 1. **Vanilla GRN** (no geometry term)  
 2. **GRN + EGGFM geometry prior**  
 3. **GRN + alternate manifolds** (e.g. PCA-50 vs raw HVG)  
-4. **Geometry-only baselines** (no GRN)
+4. **Geometry-only baselines** (no GRN).
 
 ---
 
-## 7. Trait Mapping (cNMF Programs + SMR/TWAS)
+## 7. Trait Mapping (cNMF Programs + SMR)
 
-We run **consensus NMF (cNMF)** on **unperturbed QC cells** to learn program loadings **W**:
+We run **consensus NMF (cNMF)** on **unperturbed QC cells** to learn program loadings **W**.
 
-- W has shape `[G, K]` where:
-  - G = number of HVGs in the chosen space (75 or 100)  
-  - K = number of programs (hyperparameter, e.g. 50–200)
+We intentionally **align the gene space to the EGGFM HVG space** by using the EGGFM checkpoint’s `var_names` and subsetting the QC AnnData before running cNMF. This guarantees:
+
+- Rows of W correspond exactly to the genes and order used by ΔE and the energy prior.
+
+### 7.1 cNMF outputs
+
+For a given HVG space (e.g. 75 or 100 genes), cNMF produces:
+
+- `W_consensus.npy` — `[G, K]` consensus gene-program loadings  
+- `programs_all.npy` — stacked program vectors across runs `[R*K, G]`  
+- `cluster_labels.npy` — cluster assignment per run-program  
+- optional: `program_counts.npy`, `run_coverage.npy` for stability diagnostics  
+- `genes.npy`, `cells.npy` — the gene and cell IDs used  
+- `manifest.yml` — lightweight YAML manifest with shapes, RMSE per run, etc.
+
+We store these under e.g.:
+
+- `out/programs/k562_hvg75_*`  
+- `out/programs/k562_hvg100_*`
 
 W is used to map ΔE → ΔProgram activity:
 
 \[
-\Delta a = W^	op \Delta E
+\Delta a = W^\top \Delta E.
 \]
 
-Trait vectors **θ⁽ᵗ⁾** (per trait t ∈ {MCH, RDW, IRF}) are derived from SMR/TWAS:
+### 7.2 Trait readout via SMR
 
-- SMR/TWAS yields **gene-level trait effects**  
+Trait vectors **θ⁽ᵗ⁾** (per trait t ∈ {MCH, RDW, IRF}) are derived from SMR:
+
+- SMR yields **gene-level trait effects**.  
 - We regress these onto W to obtain trait weight vectors in program space:
 
 \[
-g^{(t)} pprox W 	heta^{(t)}
+g^{(t)} \approx W \theta^{(t)}.
 \]
 
 Predicted trait deltas:
 
 \[
-\widehat{\Delta 	ext{Trait}}^{(t)} = \langle 	heta^{(t)}, \Delta a 
-angle
+\widehat{\Delta \text{Trait}}^{(t)} = \langle \theta^{(t)}, \Delta a \rangle.
 \]
 
-cNMF hyperparameters (K, L1/L2, number of runs, consensus threshold) live in `configs/params_*.yml` under a dedicated `cnmf` block.
+cNMF hyperparameters live in `configs/params.yml` under a dedicated `cnmf` block.
 
 ---
 
@@ -240,7 +271,7 @@ For a given EGGFM checkpoint (which defines the HVG gene list), we:
 5. Compute a **global control mean** in HVG space.  
 6. For each regulator r with enough QC’d cells:
    - Average its perturbed cells in HVG space → \(x_r\)  
-   - Compute \(\Delta E_r = x_r - ar{x}_{	ext{ctrl}}\)  
+   - Compute \(\Delta E_r = x_r - \bar{x}_{\text{ctrl}}\)  
 7. Optionally map ΔE → ΔP_obs via W (if `--cnmf-W` is passed).  
 8. Stub ΔY_obs for trait deltas (later replaced by real trait labels).  
 9. Split into train/val and write NPZs:
@@ -276,11 +307,11 @@ Additional axes:
 - **HVG ablations**: 75 vs 100  
 - **Embedding ablations**: raw HVG vs PCA-50 EGGFM  
 - **σ (noise) ablations**  
-- **Model-depth ablations** (GNN layers, hidden dims)  
+- **Model-depth ablations** (GNN layers, hidden dims).
 
 ---
 
-## 10. Repository Structure (Updated)
+## 10. Repository Structure
 
 ```text
 data/
@@ -307,19 +338,18 @@ out/
         grn_k562_energy_prior.pt
       hvg100/
         grn_k562_energy_prior.pt
-  interim/
-    programs_k562_hvg75_W.npy
-    programs_k562_hvg100_W.npy
+  programs/
+    k562_hvg75_W_consensus.npy
+    k562_hvg100_W_consensus.npy
 configs/
-  params_hvg75.yml
-  params_hvg100.yml
+  params.yml
   env.yml
 scripts/
   qc.py                 # QC + HVG selection on raw GWPS
   hvg_embed.py          # PCA / DiffMap / UMAP / PHATE on HVGs
   train_energy.py       # EGGFM (HVG or embedding space)
   make_grn_npz.py       # Streaming ΔE NPZ construction
-  cnmf.py               # cNMF program discovery (W)
+  cnmf_programs.py      # cNMF program discovery (W aligned to EGGFM genes)
   train_grn.py          # GRN GNN training with energy prior
 src/
   mantra/
@@ -367,7 +397,7 @@ src/
    - Embedding visualizations (PCA, DiffMap, UMAP, EGGFM)  
    - Trait prediction scatter plots  
    - Performance deltas vs ablations  
-4. Integrate SMR/TWAS-derived θ^(trait) and evaluate end-to-end Reg → ΔTrait.
+4. Integrate SMR-derived θ^(trait) and evaluate end-to-end Reg → ΔTrait.
 
 ---
 
@@ -377,34 +407,37 @@ src/
 
 ```bash
 python scripts/qc.py \
-  --params configs/params_hvg100.yml \
+  --params configs/params.yml \
   --ad data/raw/k562_gwps.h5ad \
   --out data/interim/k562_gwps_unperturbed_qc.h5ad \
   --pet   # restrict to non-targeting controls
 ```
 
-### 12.2 Embeddings (including PCA-50)
+### 12.2 Embeddings (PCA-50)
 
 ```bash
 python scripts/hvg_embed.py \
-  --params configs/params_hvg100.yml \
   --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
-  --out data/interim/k562_gwps_unperturbed_hvg_embeddings.h5ad
+  --out data/interim/k562_gwps_unperturbed_hvg_embeddings.h5ad \
+  --n-components 50 \
+  --n-neighbors 30 \
+  --seed 7
 ```
 
-### 12.3 Train EGGFM (HVG space)
+### 12.3 Train EGGFM (HVG space; main DSM ablations)
 
 ```bash
 # HVG = 75
 python scripts/train_energy.py \
-  --params configs/params_hvg75.yml \
+  --params configs/params.yml \
   --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
   --out out/models/eggfm \
   --space hvg
 
 # HVG = 100
+# (set eggfm_train.max_hvg: 100 in configs/params.yml before this run)
 python scripts/train_energy.py \
-  --params configs/params_hvg100.yml \
+  --params configs/params.yml \
   --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
   --out out/models/eggfm \
   --space hvg
@@ -414,7 +447,7 @@ python scripts/train_energy.py \
 
 ```bash
 python scripts/train_energy.py \
-  --params configs/params_hvg100.yml \
+  --params configs/params.yml \
   --ad data/interim/k562_gwps_unperturbed_hvg_embeddings.h5ad \
   --out out/models/eggfm \
   --space X_pca
@@ -450,22 +483,22 @@ python scripts/make_grn_npz.py \
   --seed 7
 ```
 
-### 12.6 Run cNMF (programs W)
+### 12.6 Build W (cNMF programs) for HVG-75 and HVG-100
 
 ```bash
-# HVG 75
-python scripts/cnmf.py \
-  --params configs/params_hvg75.yml \
+# HVG 75: build W aligned to the 75-gene EGGFM / NPZ space
+python scripts/cnmf_programs.py \
+  --params configs/params.yml \
   --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
   --energy-ckpt out/models/eggfm/eggfm_energy_k562_hvg_hvg75.pt \
-  --out-prefix out/interim/programs_k562_hvg75
+  --out-prefix out/programs/k562_hvg75
 
-# HVG 100
-python scripts/cnmf.py \
-  --params configs/params_hvg100.yml \
+# HVG 100: build W aligned to the 100-gene EGGFM / NPZ space
+python scripts/cnmf_programs.py \
+  --params configs/params.yml \
   --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
   --energy-ckpt out/models/eggfm/eggfm_energy_k562_hvg_hvg100.pt \
-  --out-prefix out/interim/programs_k562_hvg100
+  --out-prefix out/programs/k562_hvg100
 ```
 
 ### 12.7 Train GRN (GNN with energy prior)
@@ -473,13 +506,13 @@ python scripts/cnmf.py \
 ```bash
 # Example for HVG 100
 python scripts/train_grn.py \
-  --params configs/params_hvg100.yml \
+  --params configs/params.yml \
   --out out/models/grn/hvg100 \
   --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
   --train-npz data/interim/grn_k562_gwps_hvg100_npz/train.npz \
   --val-npz   data/interim/grn_k562_gwps_hvg100_npz/val.npz \
   --adj       data/interim/A_k562_hvg100.npy \
-  --cnmf-W    out/interim/programs_k562_hvg100_W.npy \
+  --cnmf-W    out/programs/k562_hvg100_W_consensus.npy \
   --energy-ckpt out/models/eggfm/eggfm_energy_k562_hvg_hvg100.pt
 ```
 
@@ -489,8 +522,8 @@ python scripts/train_grn.py \
 
 If using this repo in research, please cite:
 
-- GWPS / Perturb-seq foundational papers  
-- SMR/TWAS methods for trait mapping  
+- GWPS foundational papers  
+- SMR methods for trait mapping  
 - cNMF / gene program discovery work  
 - Any future MANTRA preprint or publication
 

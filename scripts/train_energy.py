@@ -1,127 +1,90 @@
 #!/usr/bin/env python3
 # src/mantra/eggfm/train_energy.py
 """
-Train an EGGFM energy model on a QC'd K562 AnnData, using either
-HVG expression (X) or a chosen embedding (e.g. "X_pca") as the feature space.
+Train an EGGFM energy model on a QC'd K562 AnnData, using either:
+
+  - HVG expression (ad.X in the HVG-restricted gene space), or
+  - a precomputed embedding stored in ad.obsm (e.g. "X_pca", "X_diffmap", "X_umap")
+
+as the feature space for the EnergyMLP.
 
 This module:
   - loads QC'd AnnData
   - optionally subsamples cells
   - restricts to HVGs (and top max_hvg by dispersion if configured)
+  - selects the feature representation based on `latent_space`:
+        * latent_space == "hvg" → use ad_prep.X
+        * latent_space == "<key>" → use ad_prep.obsm["<key>"]
   - runs denoising score-matching (DSM) training for EnergyMLP
   - saves an energy checkpoint containing:
       * model state_dict
       * feature / gene names
-      * mean / std normalizers
-      * feature-space tag ("hvg", "pca", etc.)
+      * mean / std normalizers in the chosen feature space
+      * feature-space tag ("hvg", "X_pca", etc.)
 
 Typical CLI wrapper usage (via scripts/train_energy.py):
 
   python scripts/train_energy.py \
       --params configs/params.yml \
       --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
-      --out out/models/eggfm
+      --out out/models/eggfm \
+      --space hvg
+
+or, to train directly on an embedding:
+
+  python scripts/train_energy.py \
+      --params configs/params.yml \
+      --ad data/interim/k562_gwps_unperturbed_hvg_embeddings.h5ad \
+      --out out/models/eggfm \
+      --space X_pca
 """
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
-from typing import Any, Dict
 
-import numpy as np
-import scanpy as sc
-import torch
-import yaml
-
-from mantra.config import EnergyModelConfig, EnergyTrainConfig
-from mantra.eggfm.trainer import train_energy_model
-from mantra.eggfm.utils import subset_anndata
+from mantra.eggfm.run_energy import run_energy_training
 
 
-def run_energy_training(
-    params_path: Path,
-    ad_path: Path,
-    out_dir: Path,
-    space: str = "hvg",
-) -> Path:
-    """
-    High-level entrypoint: load QC’d AnnData, subset HVGs, train EGGFM, save checkpoint.
+def build_argparser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="Train EGGFM energy model on K562")
+    p.add_argument(
+        "--params",
+        type=str,
+        required=True,
+        help="YAML params file (must contain eggfm_model and eggfm_train)",
+    )
+    p.add_argument(
+        "--ad",
+        type=str,
+        required=True,
+        help="Preprocessed K562 AnnData (e.g. data/interim/k562_replogle_prep.h5ad)",
+    )
+    p.add_argument(
+        "--out",
+        type=str,
+        required=True,
+        help="Output directory for checkpoints (e.g. out/models/eggfm)",
+    )
+    p.add_argument(
+        "--space",
+        type=str,
+        default="hvg",
+        help="Representation to train on: 'hvg' or an .obsm key like 'X_pca'",
+    )
+    return p
 
-    Returns the checkpoint Path.
-    """
-    out_dir.mkdir(parents=True, exist_ok=True)
 
-    params: Dict[str, Any] = yaml.safe_load(params_path.read_text())
-    model_cfg = EnergyModelConfig(**params.get("eggfm_model", {}))
-    train_cfg = EnergyTrainConfig(**params.get("eggfm_train", {}))
-
-    # 1) Load prepped K562 AnnData
-    ad = sc.read_h5ad(str(ad_path))
-
-    # 2) optional subsample for this experiment
-    train_n_cells = params["eggfm_train"].get("n_cells_sample", None)
-    if train_n_cells is not None:
-        ad_prep = subset_anndata(ad, train_n_cells, random_state=params.get("seed", 0))
-    else:
-        ad_prep = ad
-
-    # 3) restrict to HVGs if present
-    if "highly_variable" in ad_prep.var:
-        ad_prep = ad_prep[:, ad_prep.var["highly_variable"]].copy()
-        print(f"Using HVGs only: n_vars = {ad_prep.n_vars}")
-
-        # further clamp HVGs to top N by dispersions_norm
-        max_hvg = params["eggfm_train"].get("max_hvg", None)
-        if max_hvg is not None and ad_prep.n_vars > max_hvg:
-            if "dispersions_norm" in ad_prep.var:
-                disp = ad_prep.var["dispersions_norm"].to_numpy()
-                order = np.argsort(disp)[::-1]  # descending
-            else:
-                # fallback: arbitrary but deterministic
-                order = np.arange(ad_prep.n_vars)
-
-            keep_idx = order[:max_hvg]
-            ad_prep = ad_prep[:, keep_idx].copy()
-            print(
-                f"Subsetting HVGs from {len(order)} → {ad_prep.n_vars} "
-                f"(top {max_hvg} by dispersions_norm)"
-            )
-    else:
-        print("No 'highly_variable' flag in ad.var; using all genes as-is.")
-
-    # 4) Train energy model
-    bundle = train_energy_model(
-        ad_prep=ad_prep,
-        model_cfg=model_cfg,
-        train_cfg=train_cfg,
-        latent_space=space,
+def main() -> None:
+    args = build_argparser().parse_args()
+    run_energy_training(
+        params_path=Path(args.params),
+        ad_path=Path(args.ad),
+        out_dir=Path(args.out),
+        space=args.space,
     )
 
-    energy_model = bundle.model
-    mean = bundle.mean
-    std = bundle.std
-    var_names = bundle.feature_names
 
-    # 5) Save checkpoint
-    ckpt = {
-        "state_dict": energy_model.state_dict(),
-        "model_cfg": {
-            "hidden_dims": list(model_cfg.hidden_dims),
-        },
-        "n_genes": energy_model.n_genes,
-        "var_names": var_names,
-        "mean": mean,
-        "std": std,
-        "space": bundle.space,
-    }
-
-    space_tag = str(bundle.space).replace("X_", "")  # e.g. "hvg", "pca"
-    n_genes = int(energy_model.n_genes)
-
-    ckpt_name = f"eggfm_energy_k562_{space_tag}_hvg{n_genes}.pt"
-    ckpt_path = out_dir / ckpt_name
-
-    torch.save(ckpt, ckpt_path)
-    print(f"Saved EGGFM energy checkpoint to {ckpt_path}", flush=True)
-
-    return ckpt_path
+if __name__ == "__main__":
+    main()

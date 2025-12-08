@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 
 from mantra.eggfm.models import EnergyMLP
 from mantra.eggfm.dataset import AnnDataExpressionDataset
-from mantra.config import EnergyModelConfig, EnergyTrainConfig, EnergyModelBundle
+from mantra.eggfm.config import EnergyModelConfig, EnergyTrainConfig, EnergyModelBundle
 
 
 class EnergyTrainer:

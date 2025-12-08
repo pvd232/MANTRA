@@ -56,7 +56,6 @@ def _ensure_hvg_view(
             print("[HVG] use_hvg_only=False; using all genes.", flush=True)
         return ad.copy()
 
-
 def _add_hvg_truncated(
     ad: sc.AnnData,
     ad_hvg: sc.AnnData,
@@ -64,21 +63,30 @@ def _add_hvg_truncated(
     key: str = "X_hvg_trunc",
 ) -> None:
     """
-    'HVG truncated' embedding: keep top genes by normalized dispersion
+    'HVG truncated' embedding: keep top genes by normalized dispersion/variance
     (or first n) and store raw expression for those genes in .obsm[key].
 
     Shape: (n_cells, n_genes)
     """
     print(f"[HVG-trunc] Computing HVG-truncated embedding (n_genes={n_genes})", flush=True)
 
+    # Try seurat/seurat_v3-style fields in a robust way
+    score_key = None
     if "dispersions_norm" in ad_hvg.var:
-        disp = ad_hvg.var["dispersions_norm"].to_numpy()
+        score_key = "dispersions_norm"
+    elif "variances_norm" in ad_hvg.var:
+        score_key = "variances_norm"
+
+    if score_key is not None:
+        disp = ad_hvg.var[score_key].to_numpy()
         order = np.argsort(disp)[::-1]  # descending
         keep_idx = order[: min(n_genes, ad_hvg.n_vars)]
+        print(f"  Using '{score_key}' for HVG ranking.", flush=True)
     else:
         print(
-            "  No 'dispersions_norm' in ad.var; taking first "
-            f"{min(n_genes, ad_hvg.n_vars)} HVGs."
+            "  No 'dispersions_norm' or 'variances_norm' in ad.var; taking first "
+            f"{min(n_genes, ad_hvg.n_vars)} HVGs.",
+            flush=True,
         )
         keep_idx = np.arange(min(n_genes, ad_hvg.n_vars))
 
@@ -88,7 +96,6 @@ def _add_hvg_truncated(
     ad.obsm[key] = X_hvg
     ad.uns[f"{key}_genes"] = ad_hvg.var_names[keep_idx].tolist()
     print(f"  Stored '{key}' with shape {X_hvg.shape}.", flush=True)
-
 
 def _add_pca_scanpy(
     ad: sc.AnnData,

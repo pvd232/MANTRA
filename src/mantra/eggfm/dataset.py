@@ -4,7 +4,6 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from scipy import sparse
-import scanpy as sc  # only for type hints; not strictly necessary
 
 
 class AnnDataExpressionDataset(Dataset):

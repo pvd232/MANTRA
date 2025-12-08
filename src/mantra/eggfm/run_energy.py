@@ -9,9 +9,9 @@ import torch
 import scanpy as sc
 import yaml
 
-from mantra.config import EnergyModelConfig, EnergyTrainConfig
+from mantra.eggfm.config import EnergyModelConfig, EnergyTrainConfig
 from mantra.eggfm.trainer import train_energy_model
-from utils import subset_anndata  # or from mantra.utils import subset_anndata
+from mantra.utils import subset_anndata
 
 
 def run_energy_training(
