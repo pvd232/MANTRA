@@ -16,7 +16,7 @@ Example:
 --- QC all cells --
 python scripts/qc_eda.py \
   --params configs/params.yml \
-  --out data/interim/k562_all_qc.h5ad \
+  --out data/interim/k562_gwps_unperturbed.h5ad \
   --ad data/raw/K562_gwps/k562_replogie.h5ad
 
 --- QC unperturbed cells --

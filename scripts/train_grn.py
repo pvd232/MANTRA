@@ -125,17 +125,49 @@ def main() -> None:
     W = torch.from_numpy(W_np).to(device)
 
     # ---- reference state x_ref ----
-    X = qc_ad.X
+    # We need x_ref in the SAME gene space as ΔE and the energy prior (G genes).
+    # qc_ad currently has 2000 HVGs, so subset it to the 75 genes used by EGGFM/NPZ.
+
+    # 1) Load HVG names from the energy checkpoint
+    ckpt = torch.load(args.energy_ckpt, map_location="cpu")
+    hvg_names = np.array(ckpt["var_names"])
+    if hvg_names.shape[0] != G:
+        raise ValueError(
+            f"Energy ckpt var_names has {hvg_names.shape[0]} genes, "
+            f"but ΔE has {G}. These must match."
+        )
+
+    # 2) Align qc_ad.var_names to this list
+    var_names = np.array(qc_ad.var_names.astype(str))
+    gene_to_idx = {g: i for i, g in enumerate(var_names)}
+
+    missing = [g for g in hvg_names if g not in gene_to_idx]
+    if missing:
+        raise ValueError(
+            f"Could not align qc_ad genes to energy ckpt/NPZ space: "
+            f"{len(missing)} genes missing. Examples: {missing[:10]}"
+        )
+
+    idx = np.array([gene_to_idx[g] for g in hvg_names], dtype=int)
+    qc_ad_sub = qc_ad[:, idx].copy()
+    print(
+        f"[align] subset qc_ad from {qc_ad.n_vars} → {qc_ad_sub.n_vars} genes "
+        f"to match ΔE / energy prior space.",
+        flush=True,
+    )
+
+    # 3) Compute x_ref in this aligned space
+    X = qc_ad_sub.X
     if sp_sparse.issparse(X):
         X = X.toarray()
     X = np.asarray(X, dtype=np.float32)
 
-    x_ref_np = X.mean(axis=0)  # [G], default: mean over all cells
+    x_ref_np = X.mean(axis=0)  # [G]
     if x_ref_np.shape[0] != G:
         raise ValueError(
-            f"Gene dimension mismatch: x_ref has {x_ref_np.shape[0]} genes, "
+            f"Gene dimension mismatch after alignment: x_ref has {x_ref_np.shape[0]} genes, "
             f"but ΔE has {G}."
-        )
+        )    
     x_ref = torch.from_numpy(x_ref_np).to(device)
 
     # ---- dataloaders ----
@@ -197,7 +229,9 @@ def main() -> None:
 
     # ---- save best checkpoint ----
     ckpt = {
-        "model_state_dict": trainer.best_model_state,
+        "model_state_dict": trainer.best_model_state
+            if trainer.best_model_state is not None
+            else model.state_dict(),  # fallback: last state
         "trait_head_state_dict": (
             trainer.best_trait_state if trait_head is not None else None
         ),
@@ -209,9 +243,16 @@ def main() -> None:
         "W": W_np,
         "A": A_np,
         "x_ref": x_ref_np,
-        "prior_type": "energy_ckpt",  # we used a pre-trained EGGFM checkpoint
+        # --- prior metadata for later reload ---
+        "prior_type": "eggfm_energy",
         "energy_ckpt_path": str(Path(args.energy_ckpt).resolve()),
+        "energy_var_names": hvg_names,  # np.array/list of gene IDs in this space
     }
+
+    ckpt_path = out_dir / "grn_k562_energy_prior.pt"
+    torch.save(ckpt, ckpt_path)
+    print(f"Saved GRN checkpoint to {ckpt_path}", flush=True)
+
 
     ckpt_path = out_dir / "grn_k562_energy_prior.pt"
     torch.save(ckpt, ckpt_path)

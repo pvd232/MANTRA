@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Dict
 
 import numpy as np
 import torch
@@ -53,6 +53,8 @@ class EnergyTrainer:
             lr=float(train_cfg.lr),          # force-cast in case YAML gave a string
             weight_decay=float(train_cfg.weight_decay),
         )
+        self.best_model_state: Optional[Dict[str, torch.Tensor]] = None
+        self.best_trait_state: Optional[Dict[str, torch.Tensor]] = None
 
         self.best_loss: float = float("inf")
         self.best_state_dict: Optional[dict] = None

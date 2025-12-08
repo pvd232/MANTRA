@@ -34,7 +34,7 @@ eggfm_train:
   early_stop_min_delta: 0.0
   device: cuda
   # n_cells_sample: 60000
-  max_hvg: 100
+  max_hvg: 50
 
 
 grn_model:
@@ -47,15 +47,15 @@ grn_model:
   trait_hidden_dim: 64
 
 grn_train:
-  batch_size: 128
-  lr: 1e-3
+  batch_size: 16
+  lr: 2e-4
   weight_decay: 0.0
   max_epochs: 50
-  grad_clip: 0.0
-  early_stop_patience: 0
+  grad_clip: 1.0
+  early_stop_patience: 10
   early_stop_min_delta: 0.0
 
 grn_loss:
-  lambda_geo: 1.0
+  lambda_geo: 0.1
   lambda_prog: 0.0
   lambda_trait: 0.0

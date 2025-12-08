@@ -61,7 +61,7 @@ class GRNTrainer:
 
         self.optimizer = optim.Adam(
             params,
-            lr=train_cfg.lr,
+            lr=float(train_cfg.lr),          # force-cast in case YAML gave a string
             weight_decay=train_cfg.weight_decay,
         )
 
@@ -100,16 +100,20 @@ class GRNTrainer:
                 if improved:
                     best_val_loss = val_loss
                     best_state = self._snapshot_state()
+                    # NEW: expose best state for external saving
+                    self.best_model_state = best_state["grn"]
+                    self.best_trait_state = best_state.get("trait_head")
                     epochs_without_improve = 0
                 else:
                     epochs_without_improve += 1
             else:
-                # no val set → just track best train loss
                 improved = train_stats["loss"] + cfg.early_stop_min_delta < best_val_loss
                 if improved:
                     best_val_loss = train_stats["loss"]
                     best_state = self._snapshot_state()
-                epochs_without_improve = 0  # no early stopping
+                    self.best_model_state = best_state["grn"]
+                    self.best_trait_state = best_state.get("trait_head")
+                epochs_without_improve = 0  # no early stopping without val
 
             print(msg, flush=True)
 
