@@ -138,8 +138,6 @@ def build_argparser() -> argparse.ArgumentParser:
     )
 
     return p
-
-
 def make_cfg(args: argparse.Namespace) -> CNMFConfig:
     """
     Merge YAML cnmf section (if present) with CLI overrides
@@ -159,14 +157,21 @@ def make_cfg(args: argparse.Namespace) -> CNMFConfig:
             return base[field]
         return default
 
+    # --- special-case the boolean flag use_hvg_only ---
+    # YAML (or dataclass) defines the baseline; CLI can only turn it ON.
+    use_hvg_only_base = base.get("use_hvg_only", default_cfg.use_hvg_only)
+    use_hvg_only = use_hvg_only_base or bool(args.use_hvg_only)
+
     cfg = CNMFConfig(
         n_components=pick("n_components", args.k, default_cfg.n_components),
         n_restarts=pick("n_restarts", args.n_restarts, default_cfg.n_restarts),
         max_iter=pick("max_iter", args.max_iter, default_cfg.max_iter),
         tol=pick("tol", args.tol, default_cfg.tol),
-        use_hvg_only=pick("use_hvg_only", args.use_hvg_only, default_cfg.use_hvg_only),
+
+        # use the special-cased value
+        use_hvg_only=use_hvg_only,
+
         hvg_key=base.get("hvg_key", default_cfg.hvg_key),
-        n_top_genes=base.get("n_top_genes", default_cfg.n_top_genes),
         min_cells_per_gene=base.get(
             "min_cells_per_gene", default_cfg.min_cells_per_gene
         ),
@@ -185,7 +190,6 @@ def make_cfg(args: argparse.Namespace) -> CNMFConfig:
         random_state=pick("random_state", args.seed, default_cfg.random_state),
     )
     return cfg
-
 
 # ---------------------------------------------------------------------
 # Optional alignment to energy checkpoint gene space
@@ -263,7 +267,27 @@ def main() -> None:
     print(f"[CNMF] Config: {cfg}", flush=True)
 
     result = run_cnmf(ad, cfg)
+    result = run_cnmf(ad, cfg)
 
+    # ----- Optional: sanity check alignment with energy genes -----
+    if energy_genes is not None:
+        G_energy = energy_genes.shape[0]
+        G_cnmf = result.W_consensus.shape[0]
+
+        if G_cnmf != G_energy:
+            raise ValueError(
+                f"[CNMF] W_consensus has {G_cnmf} genes but "
+                f"energy checkpoint has {G_energy}. "
+                "This will break ΔE @ W; check min_cells_per_gene and HVG alignment."
+            )
+
+        if not np.array_equal(result.gene_names, energy_genes):
+            mismatch = np.where(result.gene_names != energy_genes)[0][:5]
+            raise ValueError(
+                "[CNMF] Gene ordering mismatch between CNMF result and energy ckpt. "
+                f"First mismatches at indices: {mismatch}."
+            )
+            
     save_cnmf_result(out_dir, ad, result, prefix=args.name)
 
     if energy_genes is not None:

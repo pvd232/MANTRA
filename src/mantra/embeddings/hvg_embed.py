@@ -219,22 +219,19 @@ def compute_embeddings(ad: sc.AnnData, cfg: EmbeddingConfig) -> sc.AnnData:
         hvg_trunc_n = cfg.hvg_trunc or cfg.n_components
         _add_hvg_truncated(ad, ad_hvg, n_genes=hvg_trunc_n, key="X_hvg_trunc")
 
-    if cfg.only_hvg_phate:
-        # Only HVG trunc + PHATE
-        if cfg.run_phate:
-            _add_phate(
-                ad,
-                ad_hvg,
-                n_components=cfg.n_components,
-                n_neighbors=cfg.n_neighbors,
-                seed=cfg.seed,
-            )
-    else:
-        # 2) PCA
-        if cfg.run_pca:
-            _add_pca_scanpy(ad, ad_hvg, n_components=cfg.n_components, seed=cfg.seed)
+    # 2) PCA (needed for diffmap/UMAP as well)
+    need_pca = cfg.run_pca or cfg.run_diffmap or cfg.run_umap
+    if need_pca:
+        # Always (re)compute PCA here so ad_hvg.obsm["X_pca"] exists
+        _add_pca_scanpy(
+            ad,
+            ad_hvg,
+            n_components=cfg.n_components,
+            seed=cfg.seed,
+        )
 
-        # 3) Diffusion Map + UMAP
+    # 3) Diffusion Map + UMAP (on PCA space)
+    if cfg.run_diffmap or cfg.run_umap:
         _add_neighbors_diffmap_umap(
             ad,
             ad_hvg,
@@ -245,14 +242,14 @@ def compute_embeddings(ad: sc.AnnData, cfg: EmbeddingConfig) -> sc.AnnData:
             run_umap=cfg.run_umap,
         )
 
-        # 4) PHATE
-        if cfg.run_phate:
-            _add_phate(
-                ad,
-                ad_hvg,
-                n_components=cfg.n_components,
-                n_neighbors=cfg.n_neighbors,
-                seed=cfg.seed,
-            )
+    # 4) PHATE (operates directly on HVG expression)
+    if cfg.run_phate:
+        _add_phate(
+            ad,
+            ad_hvg,
+            n_components=cfg.n_components,
+            n_neighbors=cfg.n_neighbors,
+            seed=cfg.seed,
+        )
 
     return ad

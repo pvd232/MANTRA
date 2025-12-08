@@ -35,7 +35,6 @@ class CNMFConfig:
     # ---- Data / preprocessing ----
     use_hvg_only: bool = True         # restrict to HVGs if available
     hvg_key: str = "highly_variable"  # column in ad.var marking HVGs
-    n_top_genes: Optional[int] = 3000 # top HVGs to keep for cNMF (None = keep all)
     min_cells_per_gene: int = 10      # drop genes expressed in < this many cells
     scale_cells: bool = True          # per-cell library-size scaling (L1)
 

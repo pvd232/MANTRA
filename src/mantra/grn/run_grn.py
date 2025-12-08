@@ -77,13 +77,30 @@ def run_grn_training(
     G = train_ds.n_genes
     n_regulators = train_ds.n_regulators
 
+    # ---- energy checkpoint (and enforce HVG space) ----
+    ckpt = torch.load(energy_ckpt_path, map_location="cpu")
+    space = ckpt.get("space", "hvg")
+    if space != "hvg":
+        raise ValueError(
+            f"Energy checkpoint space={space!r}; GRN currently expects an "
+            "EGGFM prior trained directly in HVG gene space (space='hvg'). "
+            "Use an HVG-space checkpoint when building NPZs and training GRN."
+        )
+
+    hvg_names = np.array(ckpt["var_names"])
+    if hvg_names.shape[0] != G:
+        raise ValueError(
+            f"Energy ckpt var_names has {hvg_names.shape[0]} genes, "
+            f"but ΔE has {G}. These must match."
+        )
+
     # ---- adjacency ----
     if adj_path is not None:
         A_np = np.load(adj_path).astype(np.float32)
     else:
         A_np = np.eye(G, dtype=np.float32)
     A = torch.from_numpy(A_np).to(device)
-
+    
     # ---- cNMF W ----
     if cnmf_W_path is not None:
         W_np = np.load(cnmf_W_path).astype(np.float32)  # [G,K]
@@ -154,7 +171,7 @@ def run_grn_training(
     # ---- energy prior (pretrained EGGFM) ----
     energy_prior = build_energy_prior_from_ckpt(
         ckpt_path=str(energy_ckpt_path),
-        gene_names=qc_ad.var_names,
+        gene_names=hvg_names,
         device=device,
     )
 

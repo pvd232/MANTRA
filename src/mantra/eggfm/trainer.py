@@ -143,6 +143,8 @@ class EnergyTrainer:
 # High-level convenience wrapper: AnnData -> EnergyModelBundle
 # --------------------------------------------------------------------
 
+# src/mantra/eggfm/trainer.py
+
 def train_energy_model(
     ad_prep: sc.AnnData,
     model_cfg: EnergyModelConfig,
@@ -150,16 +152,17 @@ def train_energy_model(
     latent_space: str = "hvg",
 ) -> EnergyModelBundle:
     """
-    Convenience wrapper used by scripts:
-    AnnData -> AnnDataExpressionDataset -> EnergyMLP -> EnergyTrainer
+    AnnData -> AnnDataExpressionDataset -> EnergyMLP -> EnergyTrainer.
 
-    `latent_space` controls which representation we train on:
+    latent_space:
       - "hvg": use ad_prep.X  (HVG log-normalized expression)
-      - any other string s: use ad_prep.obsm[s] (e.g. "X_pca", "X_phate")
+      - anything else: use ad_prep.obsm[latent_space] (e.g. "X_pca", "X_phate")
     """
     # -------- dataset: HVG or embedding --------
     if latent_space == "hvg":
         X = ad_prep.X
+        # true gene names in this space
+        feature_names = np.array(ad_prep.var_names.astype(str))
     else:
         if latent_space not in ad_prep.obsm:
             raise KeyError(
@@ -170,6 +173,13 @@ def train_energy_model(
         X = ad_prep.obsm[latent_space]
         print(f"[EGGFM trainer] Latent_space: {latent_space}", latent_space)
 
+        # synthetic feature names so we *don't* confuse them with genes
+        D = X.shape[1]
+        feature_names = np.array(
+            [f"{latent_space}_{i}" for i in range(D)],
+            dtype=str,
+        )
+
     dataset = AnnDataExpressionDataset(X)
     n_genes = dataset.X.shape[1]
 
@@ -177,17 +187,12 @@ def train_energy_model(
     mean = dataset.mean  # [D]
     std = dataset.std    # [D]
 
-    # For HVG we keep gene names; for embeddings we can still stash HVG var_names.
-    feature_names = np.array(ad_prep.var_names)
-
-    # -------- model --------
     hidden_dims = tuple(model_cfg.hidden_dims)
     model = EnergyMLP(
         n_genes=n_genes,
         hidden_dims=hidden_dims,
     )
 
-    # -------- trainer --------
     trainer = EnergyTrainer(
         model=model,
         dataset=dataset,

@@ -20,7 +20,6 @@ cnmf:
   # -------------------------
   use_hvg_only: true        # work only on HVGs (recommended)
   hvg_key: "highly_variable"
-  n_top_genes: 3000         # how many HVGs to consider for cNMF
   min_cells_per_gene: 10    # drop genes expressed in < this many cells
   scale_cells: true         # L1 / library-size normalize per cell before NMF
 
@@ -63,8 +62,8 @@ eggfm_train:
   early_stop_patience: 10
   early_stop_min_delta: 0.0
   device: cuda
+  max_hvg: 100
   # n_cells_sample: 60000
-  # max_hvg: 100
 
 grn_model:
   n_layers: 3
@@ -77,15 +76,17 @@ grn_model:
 
 grn_train:
   batch_size: 16
-  lr: 2e-4
+  lr: 1e-4
   weight_decay: 0.0
   max_epochs: 50
   grad_clip: 1.0
   early_stop_patience: 10
   early_stop_min_delta: 0.0
+  use_cosine_lr: false
+  cosine_eta_min: 1e-7
 
 grn_loss:
-  lambda_geo: 1e-2
+  lambda_geo: 0.002
   lambda_prog: 0.0
   lambda_trait: 0.0
 
@@ -99,9 +100,8 @@ embeddings:
   hvg_key: "highly_variable"
   hvg_trunc: 100      # or null to use n_components
 
-  run_hvg_trunc: true
+  run_hvg_trunc: false
   run_pca: true
   run_diffmap: true
   run_umap: true
   run_phate: true
-  only_hvg_phate: false

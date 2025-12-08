@@ -49,7 +49,6 @@ def _select_matrix_from_anndata(
     Steps:
       - optional HVG restriction (use_hvg_only, hvg_key)
       - min_cells_per_gene filter
-      - optional n_top_genes truncation by dispersions_norm (if available)
       - per-cell library-size normalization (if scale_cells)
     """
     ad_view = ad.copy()
@@ -97,23 +96,7 @@ def _select_matrix_from_anndata(
         )
         ad_view = ad_view[:, gene_keep].copy()
 
-    # --- 3) n_top_genes truncation (by dispersions_norm if available) ---
-    if cfg.n_top_genes is not None and ad_view.n_vars > cfg.n_top_genes:
-        G_before = ad_view.n_vars
-        if "dispersions_norm" in ad_view.var:
-            disp = ad_view.var["dispersions_norm"].to_numpy()
-            order = np.argsort(disp)[::-1]  # descending
-        else:
-            order = np.arange(G_before)
-        keep_idx = order[: cfg.n_top_genes]
-        ad_view = ad_view[:, keep_idx].copy()
-        print(
-            f"[CNMF] Subsetting genes by n_top_genes={cfg.n_top_genes}: "
-            f"{G_before} → {ad_view.n_vars}",
-            flush=True,
-        )
-
-    # --- 4) materialize X and ensure non-negativity ---
+    # --- 3) materialize X and ensure non-negativity ---
     X = ad_view.X
     if sp.issparse(X):
         X = X.toarray()

@@ -64,6 +64,14 @@ class GRNTrainer:
             lr=float(train_cfg.lr),          # force-cast in case YAML gave a string
             weight_decay=train_cfg.weight_decay,
         )
+        
+        self.scheduler = None
+        if getattr(train_cfg, "use_cosine_lr", False):
+            self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer,
+                T_max=train_cfg.max_epochs,
+                eta_min=float(train_cfg.cosine_eta_min),
+            )
 
     # ------------------- public API -------------------
 
@@ -72,9 +80,6 @@ class GRNTrainer:
         train_loader: DataLoader,
         val_loader: Optional[DataLoader] = None,
     ) -> None:
-        """
-        Simple training loop with optional early stopping on val loss.
-        """
         cfg = self.train_cfg
 
         best_val_loss = float("inf")
@@ -83,23 +88,27 @@ class GRNTrainer:
 
         for epoch in range(cfg.max_epochs):
             train_stats = self.train_epoch(train_loader)
+
+            # log current LR
+            curr_lr = self.optimizer.param_groups[0]["lr"]
             msg = (
                 f"[GRN] Epoch {epoch+1}/{cfg.max_epochs} "
                 f"train_loss={train_stats['loss']:.4f} "
                 f"expr={train_stats['L_expr']:.4f} "
                 f"geo={train_stats['L_geo']:.4f} "
                 f"prog={train_stats['L_prog']:.4f} "
-                f"trait={train_stats['L_trait']:.4f}"
+                f"trait={train_stats['L_trait']:.4f} "
+                f"lr={curr_lr:.2e}"
             )
+
             if val_loader is not None:
                 val_stats = self.eval_epoch(val_loader)
                 val_loss = val_stats["loss"]
                 val_expr = val_stats["L_expr"]
 
-                # log both
                 msg += f" | val_loss={val_loss:.4f} val_expr={val_expr:.4f}"
 
-                # early stopping on *expression* only
+                # early stopping on expression only (as you have)
                 improved = val_expr + cfg.early_stop_min_delta < best_val_loss
                 if improved:
                     best_val_loss = val_expr
@@ -117,9 +126,13 @@ class GRNTrainer:
                     best_state = self._snapshot_state()
                     self.best_model_state = best_state["grn"]
                     self.best_trait_state = best_state.get("trait_head")
-                epochs_without_improve = 0  # no early stopping without val
+                epochs_without_improve = 0
 
             print(msg, flush=True)
+
+            # NEW: step scheduler once per epoch
+            if self.scheduler is not None:
+                self.scheduler.step()
 
             if (
                 val_loader is not None
@@ -135,7 +148,7 @@ class GRNTrainer:
 
         if best_state is not None:
             self._load_state(best_state)
-
+            
     def train_epoch(self, loader: DataLoader) -> Dict[str, float]:
         self.grn_model.train()
         if self.trait_head is not None:

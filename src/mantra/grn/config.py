@@ -46,20 +46,18 @@ class GRNModelConfig:
 
 @dataclass
 class GRNTrainConfig:
-    """
-    Hyperparameters for GRN training.
-    Drives the DataLoader, optimizer, and early stopping logic.
-    """
-
-    batch_size: int = 128
-    lr: float = 1e-3
+    batch_size: int = 16
+    lr: float = 2e-4
     weight_decay: float = 0.0
-
     max_epochs: int = 50
-    grad_clip: float = 0.0          # 0.0 = disabled
-
-    early_stop_patience: int = 0    # 0 = no early stopping
+    grad_clip: float = 1.0
+    early_stop_patience: int = 10
     early_stop_min_delta: float = 0.0
+
+    # NEW: cosine LR schedule
+    use_cosine_lr: bool = False
+    cosine_eta_min: float = 1e-6  # minimum LR
+
 
 
 @dataclass

@@ -16,6 +16,19 @@ Typical usage:
       --params configs/params.yml \
       --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
       --out data/interim/k562_gwps_unperturbed_hvg_embeddings.h5ad
+      
+QC:
+    python - << 'PY'
+    import scanpy as sc
+
+    ad = sc.read_h5ad("data/interim/k562_gwps_unperturbed_hvg_embeddings.h5ad")
+    print("Embeddings X shape:", ad.X.shape)
+    print("obsm keys:", list(ad.obsm.keys()))
+    if "X_pca" in ad.obsm:
+        print("X_pca shape:", ad.obsm["X_pca"].shape)
+    PY
+
+
 """
 
 from __future__ import annotations

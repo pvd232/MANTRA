@@ -41,10 +41,6 @@ class EmbeddingConfig:
     run_umap: bool = True       # compute X_umap (on top of X_pca)
     run_phate: bool = True      # compute X_phate (if phate is installed)
 
-    # ---- Legacy / simplified mode ----
-    # If True, skip PCA/diffmap/UMAP and only compute X_hvg_trunc + PHATE.
-    only_hvg_phate: bool = False
-
 
 @dataclass
 class EmbeddingSummary:

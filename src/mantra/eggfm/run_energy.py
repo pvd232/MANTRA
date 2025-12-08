@@ -70,7 +70,13 @@ def run_energy_training(
         train_cfg=train_cfg,
         latent_space=space,
     )
-
+    
+    if bundle.space != "hvg":
+        raise ValueError(
+            f"Expected energy model in HVG space, got {bundle.space!r}. "
+            "For embedding ablations, use a separate experimental path."
+        )
+        
     energy_model = bundle.model
     mean = bundle.mean
     std = bundle.std
