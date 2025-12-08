@@ -13,13 +13,6 @@ from mantra.config import EnergyModelConfig, EnergyTrainConfig
 from mantra.eggfm.trainer import train_energy_model
 from utils import subset_anndata  # or from mantra.utils import subset_anndata
 
-'''
-python scripts/train_energy.py \
-  --params configs/params.yml. \
-  --ad data/interim/k562_gwps_unperturbed_qc.h5ad. \
-  --out out/models/eggfm
-'''
-
 
 def run_energy_training(
     params_path: Path,

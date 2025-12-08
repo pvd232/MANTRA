@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
+# src/mantra/qc.py
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 from typing import Any, Dict
 
@@ -10,42 +9,13 @@ import scanpy as sc  # type: ignore
 from scipy import sparse
 import yaml
 
-"""
-Example:
-
---- QC all cells --
-python scripts/qc_eda.py \
-  --params configs/params.yml \
-  --out data/interim/k562_gwps_unperturbed.h5ad \
-  --ad data/raw/K562_gwps/k562_replogie.h5ad
-
---- QC unperturbed cells --
-python scripts/qc_eda.py \
-  --params configs/params.yml \
-  --out data/interim/k562_unpert_qc.h5ad \
-  --ad data/raw/K562_gwps/k562_replogie.h5ad \
-  --pet
-"""
-
-
-def build_argparser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(description="QC + EDA for cells.")
-    ap.add_argument("--params", required=True, help="configs/params.yml")
-    ap.add_argument(
-        "--out",
-        required=True,
-        help="Output QC AnnData .h5ad file (e.g. data/interim/k562_qc.h5ad)",
-    )
-    ap.add_argument("--ad", required=True, help="Path to input .h5ad")
-    ap.add_argument(
-        "--pet",
-        action="store_true",
-        help="If set, restrict to non-targeting control cells (gene == 'non-targeting')",
-    )
-    return ap
-
 
 def prep(ad: sc.AnnData, params: Dict[str, Any]) -> sc.AnnData:
+    """
+    Core QC + HVG selection + normalization on an in-memory AnnData.
+    Returns a new AnnData containing only QC-passing cells + HVGs,
+    log-normalized in ad.X.
+    """
     n_cells = ad.n_obs
 
     # Remove genes that are not statistically relevant (< 0.1% of cells)
@@ -97,22 +67,34 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]) -> sc.AnnData:
     return ad
 
 
-def main() -> None:
-    args = build_argparser().parse_args()
-    params: Dict[str, Any] = yaml.safe_load(Path(args.params).read_text())
+def run_qc(
+    params_path: Path,
+    ad_path: Path,
+    out_path: Path,
+    *,
+    pet: bool = False,
+) -> sc.AnnData:
+    """
+    High-level QC entrypoint used by scripts / notebooks.
 
-    out_path = Path(args.out)
+    params_path: YAML with 'qc' and 'hvg_n_top_genes' entries.
+    ad_path:     Raw big .h5ad (possibly > 60GB).
+    out_path:    Where to write QC’d .h5ad.
+    pet:         If True, restrict to obs['gene'] == 'non-targeting'.
+    """
+    params: Dict[str, Any] = yaml.safe_load(params_path.read_text())
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # --- Load full AnnData in backed mode (no 61 GiB dense allocation) ---
-    ad_full = sc.read_h5ad(args.ad, backed="r")
+    ad_full = sc.read_h5ad(str(ad_path), backed="r")
     print(
         f"[load] full AnnData: n_obs={ad_full.n_obs}, n_vars={ad_full.n_vars}",
         flush=True,
     )
 
     # Decide which cells to use
-    if args.pet:
+    if pet:
         # restrict to non-targeting controls in a full (perturbed+control) dataset
         if "gene" not in ad_full.obs:
             raise ValueError(
@@ -161,6 +143,4 @@ def main() -> None:
     qc_ad.write_h5ad(out_path)
     print("[done]", flush=True)
 
-
-if __name__ == "__main__":
-    main()
+    return qc_ad

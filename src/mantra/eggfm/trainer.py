@@ -147,30 +147,37 @@ def train_energy_model(
     ad_prep: sc.AnnData,
     model_cfg: EnergyModelConfig,
     train_cfg: EnergyTrainConfig,
+    latent_space: str = "hvg",
 ) -> EnergyModelBundle:
     """
     Convenience wrapper used by scripts:
+    AnnData -> AnnDataExpressionDataset -> EnergyMLP -> EnergyTrainer
 
-      AnnData -> AnnDataExpressionDataset -> EnergyMLP -> EnergyTrainer
-
-    Trains an energy-based model on preprocessed AnnData using DSM
-    and returns an EnergyModelBundle.
+    `latent_space` controls which representation we train on:
+      - "hvg": use ad_prep.X  (HVG log-normalized expression)
+      - any other string s: use ad_prep.obsm[s] (e.g. "X_pca", "X_phate")
     """
-    # -------- dataset: HVG or PCA --------
-    latent_space = "hvg"  # promote to config later if you want
+    # -------- dataset: HVG or embedding --------
     if latent_space == "hvg":
         X = ad_prep.X
     else:
-        if "X_pca" not in ad_prep.obsm:
-            sc.pp.pca(ad_prep, n_comps=50)
-        X = ad_prep.obsm["X_pca"]
+        if latent_space not in ad_prep.obsm:
+            raise KeyError(
+                f"Requested latent_space={latent_space!r}, "
+                f"but it is not in ad_prep.obsm. "
+                f"Available keys: {list(ad_prep.obsm.keys())}"
+            )
+        X = ad_prep.obsm[latent_space]
+        print(f"[EGGFM trainer] Latent_space: {latent_space}", latent_space)
 
     dataset = AnnDataExpressionDataset(X)
     n_genes = dataset.X.shape[1]
 
-    # record normalization
+    # record normalization (always in the *model feature space*)
     mean = dataset.mean  # [D]
     std = dataset.std    # [D]
+
+    # For HVG we keep gene names; for embeddings we can still stash HVG var_names.
     feature_names = np.array(ad_prep.var_names)
 
     # -------- model --------
