@@ -1,14 +1,34 @@
 #!/usr/bin/env python
+# src/mantra/scripts/hvg_embed.py
+"""
+Compute manifold embeddings on a QC'd AnnData with HVGs and
+store them in .obsm / .uns, driven by a YAML EmbeddingConfig.
+
+This script:
+  - loads a QC'd AnnData with HVGs annotated
+  - reads embedding hyperparameters from configs/params.yml
+  - computes PCA / Diffusion Map / UMAP / PHATE / etc. as configured
+  - writes the updated AnnData (with .obsm embeddings) back to disk
+
+Typical usage:
+
+  python scripts/hvg_embed.py \
+      --params configs/params.yml \
+      --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
+      --out data/interim/k562_gwps_unperturbed_hvg_embeddings.h5ad
+"""
+
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
-import yaml
 import scanpy as sc
+import yaml
 
 from mantra.embeddings import EmbeddingConfig, compute_embeddings
+
 
 
 def build_argparser() -> argparse.ArgumentParser:

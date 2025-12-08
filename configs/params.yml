@@ -1,10 +1,6 @@
 seed: 7
 hvg_n_top_genes: 2000
 
-spec:
-  n_pcs: 20
-  dcol_max_cells: 3000
-
 qc:
   min_cells: 500
   min_genes: 200
@@ -27,19 +23,17 @@ cnmf:
   n_top_genes: 3000         # how many HVGs to consider for cNMF
   min_cells_per_gene: 10    # drop genes expressed in < this many cells
   scale_cells: true         # L1 / library-size normalize per cell before NMF
-  scale_genes: false        # optional: z-score genes (usually false for NMF)
 
   # -------------------------
   # NMF regularization
   # -------------------------
-  alpha: 0.0                # overall regularization strength (if your NMF impl supports it)
+  alpha: 0.0                # overall regularization strength
   l1_ratio: 0.0             # 0 = pure L2, 1 = pure L1; keep 0.0 unless you need sparsity
 
   # -------------------------
   # Consensus clustering
   # -------------------------
-  consensus_method: "kmeans"  # currently only "kmeans" is implemented
-  consensus_kmeans_n_init: 10 # n_init for KMeans on RK program matrix
+  consensus_kmeans_n_init: 10 # n_init for KMeans on R*K program matrix
 
   # Coverage filter for "stable" programs
   filter_by_coverage: true    # if true, drop unstable programs
@@ -49,6 +43,7 @@ cnmf:
   # Reproducibility
   # -------------------------
   random_state: 7             # master seed for NMF + KMeans
+
 
 
 traits:
@@ -95,18 +90,18 @@ grn_loss:
   lambda_trait: 0.0
 
 
-  embeddings:
-    n_components: 20
-    n_neighbors: 30
-    seed: 0
+embeddings:
+  n_components: 20
+  n_neighbors: 30
+  seed: 0
 
-    use_hvg_only: true
-    hvg_key: "highly_variable"
-    hvg_trunc: 150      # or null to use n_components
+  use_hvg_only: true
+  hvg_key: "highly_variable"
+  hvg_trunc: 150      # or null to use n_components
 
-    run_hvg_trunc: true
-    run_pca: true
-    run_diffmap: true
-    run_umap: true
-    run_phate: true
-    only_hvg_phate: false
+  run_hvg_trunc: true
+  run_pca: true
+  run_diffmap: true
+  run_umap: true
+  run_phate: true
+  only_hvg_phate: false

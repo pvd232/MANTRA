@@ -1,9 +1,27 @@
 #!/usr/bin/env python3
+# src/mantra/scripts/strip_uns_log1p.py
+"""
+Remove the /uns/log1p group from an .h5ad file to fix
+AnnData IORegistryError issues caused by incompatible log1p metadata.
+
+This script:
+  - optionally copies the input .h5ad before editing
+  - opens the target file with h5py
+  - deletes /uns/log1p if present
+  - leaves other contents untouched
+
+Usage:
+
+  python scripts/strip_uns_log1p.py \
+      --h5ad-in data/raw/some_dataset.h5ad \
+      --h5ad-out data/raw/some_dataset_nolog1p.h5ad
+"""
+
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import shutil
+from pathlib import Path
 
 import h5py  # type: ignore
 

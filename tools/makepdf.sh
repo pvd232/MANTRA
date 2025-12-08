@@ -9,7 +9,10 @@ if [[ ! -d "$TARGET_DIR" ]]; then
 fi
 
 # Default output goes into the target directory unless explicitly provided
-OUTPUT_PDF="${2:-"$TARGET_DIR/combined_python_code.pdf"}"
+TARGET_DIR_CLEAN="$(basename "$(cd "$TARGET_DIR" && pwd)")"
+OUTPUT_PDF="${2:-"$TARGET_DIR/combined_python_code_${TARGET_DIR_CLEAN}.pdf"}"
+
+
 TEMP_PS_FILE="$(mktemp --suffix=.ps)"
 
 shopt -s nullglob

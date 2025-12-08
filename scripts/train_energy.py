@@ -1,24 +1,41 @@
-# src/mantra/eggfm/run_energy.py
+#!/usr/bin/env python3
+# src/mantra/eggfm/train_energy.py
+"""
+Train an EGGFM energy model on a QC'd K562 AnnData, using either
+HVG expression (X) or a chosen embedding (e.g. "X_pca") as the feature space.
+
+This module:
+  - loads QC'd AnnData
+  - optionally subsamples cells
+  - restricts to HVGs (and top max_hvg by dispersion if configured)
+  - runs denoising score-matching (DSM) training for EnergyMLP
+  - saves an energy checkpoint containing:
+      * model state_dict
+      * feature / gene names
+      * mean / std normalizers
+      * feature-space tag ("hvg", "pca", etc.)
+
+Typical CLI wrapper usage (via scripts/train_energy.py):
+
+  python scripts/train_energy.py \
+      --params configs/params.yml \
+      --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
+      --out out/models/eggfm
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
 import numpy as np
-import torch
 import scanpy as sc
+import torch
 import yaml
 
 from mantra.config import EnergyModelConfig, EnergyTrainConfig
 from mantra.eggfm.trainer import train_energy_model
-from utils import subset_anndata  # or from mantra.utils import subset_anndata
-
-'''
-python scripts/train_energy.py \
-  --params configs/params.yml. \
-  --ad data/interim/k562_gwps_unperturbed_qc.h5ad. \
-  --out out/models/eggfm
-'''
+from mantra.eggfm.utils import subset_anndata
 
 
 def run_energy_training(

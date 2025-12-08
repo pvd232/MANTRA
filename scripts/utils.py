@@ -1,4 +1,13 @@
-# EGGFM/utils.py
+#!/usr/bin/env python3
+# src/mantra/eggfm/utils.py
+"""
+Utility helpers for EGGFM training and experiments.
+
+Currently provides:
+  - subset_anndata: random subsampling of AnnData rows (cells)
+    with a fixed random seed for reproducibility.
+"""
+
 import numpy as np
 import scanpy as sc
 

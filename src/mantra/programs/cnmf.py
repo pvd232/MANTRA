@@ -1,9 +1,25 @@
+#!/usr/bin/env python
 # src/mantra/programs/cnmf.py
+"""
+Consensus NMF (cNMF) routines for program discovery on AnnData.
+
+Public API:
+  - run_cnmf(ad: AnnData, cfg: CNMFConfig) -> CNMFResults
+  - save_cnmf_result(out_dir: Path, ad: AnnData, result: CNMFResults, prefix: str)
+
+These utilities:
+  - select a non-negative gene expression matrix from AnnData
+  - apply HVG restriction, min-cells filter, and optional top-gene truncation
+  - run NMF n_restarts times with different seeds
+  - cluster per-run programs in gene space via KMeans
+  - compute stable consensus programs and basic stability metrics
+"""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
+from typing import Tuple, Dict, Any
 
 import numpy as np
 import scanpy as sc
@@ -11,56 +27,7 @@ import scipy.sparse as sp
 from sklearn.decomposition import NMF
 from sklearn.cluster import KMeans
 
-'''
-python scripts/cnmf.py \
-  --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
-  --out out/programs/k562_cnmf_hvg75 \
-  --k 75 \
-  --use-hvg \
-  --max-cells 50000 \
-  --n-restarts 20 \
-  --bootstrap-fraction 0.8 \
-  --seed 7 \
-  --name k562_cnmf_hvg75
-'''
-
-@dataclass
-class CNMFConfig:
-    """
-    Configuration for (consensus) NMF.
-
-    - n_components: K (number of programs)
-    - n_restarts: how many independent NMF runs to aggregate
-    - bootstrap_fraction: fraction of cells to use per run (bootstrap)
-    """
-    n_components: int
-
-    # data selection
-    use_hvg: bool = True
-    obsm_key: Optional[str] = None   # e.g. "X_pca" or None -> use .X
-    layer: Optional[str] = None      # optional alt layer (e.g. "counts")
-    max_cells: Optional[int] = None  # cap cells before consensus (for speed)
-
-    # consensus parameters
-    n_restarts: int = 10
-    bootstrap_fraction: float = 0.8  # per-run fraction of cells (0< f ≤ 1)
-
-    # NMF hyperparameters
-    max_iter: int = 400
-    tol: float = 1e-4
-    init: str = "nndsvda"
-    random_state: int = 0
-    alpha_W: float = 0.0
-    alpha_H: float = 0.0
-    l1_ratio: float = 0.0
-
-    # KMeans for consensus clustering
-    kmeans_max_iter: int = 300
-    kmeans_tol: float = 1e-4
-    kmeans_n_init: int = 10
-
-    # bookkeeping
-    name: str = "k562_cnmf"
+from mantra.programs.config import CNMFConfig, CNMFResults
 
 
 # ---------------------------------------------------------------------
@@ -75,49 +42,79 @@ def _select_matrix_from_anndata(
     """
     Prepare the matrix X for NMF:
 
-        X_sel: (n_cells_sel, G)
-        cell_idx: indices of cells used
-        gene_idx: indices of genes used (columns)
+        X_sel:    (n_cells_sel, G)
+        cell_idx: indices of cells used   (here: all cells)
+        gene_idx: indices of genes used   (after HVG / filters)
 
-    We apply:
-      - optional HVG restriction
-      - optional obsm/layer selection
-      - optional global cell subsampling (max_cells)
+    Steps:
+      - optional HVG restriction (use_hvg_only, hvg_key)
+      - min_cells_per_gene filter
+      - optional n_top_genes truncation by dispersions_norm (if available)
+      - per-cell library-size normalization (if scale_cells)
     """
-    ad_view = ad
+    ad_view = ad.copy()
 
     # --- 1) HVG restriction ---
-    if cfg.use_hvg and "highly_variable" in ad.var:
-        hvg_mask = ad.var["highly_variable"].to_numpy().astype(bool)
-        n_hvg = int(hvg_mask.sum())
-        if n_hvg == 0:
-            print("[CNMF] 'highly_variable' present but no genes flagged; using all genes.")
+    if cfg.use_hvg_only:
+        if cfg.hvg_key in ad_view.var:
+            hvg_mask = ad_view.var[cfg.hvg_key].to_numpy().astype(bool)
+            n_hvg = int(hvg_mask.sum())
+            if n_hvg == 0:
+                print(
+                    f"[CNMF] HVG key '{cfg.hvg_key}' present but no genes flagged; "
+                    "using all genes.",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"[CNMF] Restricting to HVGs via '{cfg.hvg_key}': n_vars = {n_hvg}",
+                    flush=True,
+                )
+                ad_view = ad_view[:, hvg_mask].copy()
         else:
-            print(f"[CNMF] Restricting to HVGs: n_vars = {n_hvg}", flush=True)
-            ad_view = ad[:, hvg_mask].copy()
+            print(
+                f"[CNMF] HVG key '{cfg.hvg_key}' not found in ad.var; using all genes.",
+                flush=True,
+            )
 
-    # --- 2) choose representation ---
-    if cfg.obsm_key is not None:
-        if cfg.obsm_key not in ad_view.obsm:
-            raise KeyError(
-                f"[CNMF] obsm_key={cfg.obsm_key!r} not found. "
-                f"Available: {list(ad_view.obsm.keys())}"
-            )
-        X = ad_view.obsm[cfg.obsm_key]
-        print(f"[CNMF] Using obsm[{cfg.obsm_key!r}] with shape {X.shape}", flush=True)
-    elif cfg.layer is not None:
-        if cfg.layer not in ad_view.layers:
-            raise KeyError(
-                f"[CNMF] layer={cfg.layer!r} not found. "
-                f"Available: {list(ad_view.layers.keys())}"
-            )
-        X = ad_view.layers[cfg.layer]
-        print(f"[CNMF] Using layer[{cfg.layer!r}] with shape {X.shape}", flush=True)
+    # --- 2) min_cells_per_gene filter ---
+    X_tmp = ad_view.X
+    if sp.issparse(X_tmp):
+        detected = np.asarray((X_tmp > 0).sum(axis=0)).ravel()
     else:
-        X = ad_view.X
-        print(f"[CNMF] Using ad.X with shape {X.shape}", flush=True)
+        detected = (X_tmp > 0).sum(axis=0)
+    gene_keep = detected >= int(cfg.min_cells_per_gene)
+    n_kept = int(gene_keep.sum())
+    if n_kept == 0:
+        raise RuntimeError(
+            f"[CNMF] No genes pass min_cells_per_gene={cfg.min_cells_per_gene}"
+        )
+    if n_kept < ad_view.n_vars:
+        print(
+            f"[CNMF] Filtered genes by min_cells_per_gene={cfg.min_cells_per_gene}: "
+            f"{ad_view.n_vars} → {n_kept}",
+            flush=True,
+        )
+        ad_view = ad_view[:, gene_keep].copy()
 
-    # --- 3) dense + non-negativity check ---
+    # --- 3) n_top_genes truncation (by dispersions_norm if available) ---
+    if cfg.n_top_genes is not None and ad_view.n_vars > cfg.n_top_genes:
+        G_before = ad_view.n_vars
+        if "dispersions_norm" in ad_view.var:
+            disp = ad_view.var["dispersions_norm"].to_numpy()
+            order = np.argsort(disp)[::-1]  # descending
+        else:
+            order = np.arange(G_before)
+        keep_idx = order[: cfg.n_top_genes]
+        ad_view = ad_view[:, keep_idx].copy()
+        print(
+            f"[CNMF] Subsetting genes by n_top_genes={cfg.n_top_genes}: "
+            f"{G_before} → {ad_view.n_vars}",
+            flush=True,
+        )
+
+    # --- 4) materialize X and ensure non-negativity ---
+    X = ad_view.X
     if sp.issparse(X):
         X = X.toarray()
     X = np.asarray(X, dtype=np.float32)
@@ -128,22 +125,19 @@ def _select_matrix_from_anndata(
             "NMF assumes non-negative data. Check preprocessing."
         )
 
-    # --- 4) optional global cell subsampling ---
-    n_cells = X.shape[0]
-    if cfg.max_cells is not None and n_cells > cfg.max_cells:
-        rng = np.random.default_rng(cfg.random_state)
-        cell_idx = np.sort(rng.choice(n_cells, size=cfg.max_cells, replace=False))
-        print(
-            f"[CNMF] Global subsample: cells {n_cells} → {cfg.max_cells}",
-            flush=True,
-        )
-    else:
-        cell_idx = np.arange(n_cells, dtype=int)
+    # --- 5) per-cell scaling (library-size normalization) ---
+    if cfg.scale_cells:
+        libsize = X.sum(axis=1, keepdims=True)  # (N,1)
+        libsize[libsize == 0.0] = 1.0
+        X = X / libsize
+        print("[CNMF] Applied per-cell library-size normalization.", flush=True)
 
-    X_sel = X[cell_idx, :]
-    gene_idx = np.arange(X_sel.shape[1], dtype=int)
+    n_cells, G = X.shape
+    cell_idx = np.arange(n_cells, dtype=int)
+    gene_idx = np.arange(G, dtype=int)
 
-    return X_sel, cell_idx, gene_idx
+    print(f"[CNMF] Final matrix for NMF: shape={X.shape}", flush=True)
+    return X, cell_idx, gene_idx
 
 
 def _fit_single_nmf(
@@ -171,13 +165,13 @@ def _fit_single_nmf(
 
     nmf = NMF(
         n_components=K,
-        init=cfg.init,
-        max_iter=cfg.max_iter,
-        tol=cfg.tol,
+        init="nndsvda",
+        max_iter=int(cfg.max_iter),
+        tol=float(cfg.tol),
         random_state=run_seed,
-        alpha_W=cfg.alpha_W,
-        alpha_H=cfg.alpha_H,
-        l1_ratio=cfg.l1_ratio,
+        alpha_W=float(cfg.alpha),
+        alpha_H=float(cfg.alpha),
+        l1_ratio=float(cfg.l1_ratio),
         solver="cd",
         verbose=0,
     )
@@ -189,7 +183,8 @@ def _fit_single_nmf(
     frob_err = np.linalg.norm(X - recon, ord="fro") / np.sqrt(X.size)
 
     print(
-        f"[CNMF]   NMF done. Frobenius RMSE per entry={frob_err:.4f}, n_iter={nmf.n_iter_}",
+        f"[CNMF]   NMF done. Frobenius RMSE per entry={frob_err:.4f}, "
+        f"n_iter={nmf.n_iter_}",
         flush=True,
     )
 
@@ -204,29 +199,29 @@ def _fit_single_nmf(
 def run_cnmf(
     ad: sc.AnnData,
     cfg: CNMFConfig,
-) -> Dict[str, Any]:
+) -> CNMFResults:
     """
     Consensus NMF:
 
-      1) Select X from AnnData (HVG / obsm / layer / max_cells).
+      1) Select X from AnnData (HVG / filters / scaling).
       2) For r = 1..n_restarts:
-           - bootstrap cells
            - run NMF with seed = random_state + r
-           - collect program loadings W_genes^{(r)} = H^{(r)T}  [G, K]
-      3) Stack all programs into matrix P: (R*K, G)
-           - optionally L2-normalize rows
-      4) KMeans on P into K clusters
-      5) Consensus W_genes = cluster_centers^T  [G, K]
+           - collect gene-level program loadings W_genes^{(r)} = H^{(r)T}  [G, K]
+      3) Stack all programs into matrix P: (R*K, G), row L2-normalized.
+      4) KMeans on P into K clusters (K = n_components).
+      5) Consensus W_full = cluster_centers^T  [G, K]
+      6) Optionally filter to stable programs using run_coverage
+         (fraction of runs each cluster appears in).
 
-    Returns a dict with:
-      - "W_consensus": [G, K]
-      - "programs_all": [R*K, G]
-      - "cluster_labels": [R*K]
-      - "frob_rmse_runs": list of RMSE per run
-      - "n_iter_runs": list of iterations per run
-      - "cell_idx": global cell indices used
-      - "gene_idx": gene indices used
-      - "cfg": CNMFConfig as dict
+    Returns:
+      CNMFResults with:
+        - W_consensus:      [G, K_stable]
+        - programs_all:     [R*K, G] (per-run programs in gene space)
+        - cluster_assignments: [R*K]
+        - run_coverage:     [K]
+        - gene_names:       [G]
+        - cell_idx:         indices of cells used
+        - config:           CNMFConfig
     """
     X_base, cell_idx, gene_idx = _select_matrix_from_anndata(ad, cfg)
     n_cells_base, G = X_base.shape
@@ -235,42 +230,29 @@ def run_cnmf(
 
     print(
         f"[CNMF] Consensus NMF: base matrix shape={X_base.shape}, "
-        f"K={K}, n_restarts={R}, bootstrap_fraction={cfg.bootstrap_fraction}",
+        f"K={K}, n_restarts={R}",
         flush=True,
     )
 
-    rng = np.random.default_rng(cfg.random_state)
-
-    all_programs = []      # will hold (R*K, G)
     frob_rmse_runs = []
     n_iter_runs = []
+    all_programs = []      # will hold (R*K, G)
 
     for r in range(R):
-        # per-run bootstrap of cells
-        if cfg.bootstrap_fraction < 1.0:
-            n_cells_run = int(np.ceil(cfg.bootstrap_fraction * n_cells_base))
-            # sample WITHOUT replacement is typical in cNMF
-            boot_idx = np.sort(
-                rng.choice(n_cells_base, size=n_cells_run, replace=False)
-            )
-            X_run = X_base[boot_idx, :]
-        else:
-            X_run = X_base
-
-        run_seed = cfg.random_state + r
-        W_cells, H, rmse, n_iter = _fit_single_nmf(X_run, cfg, run_seed)
+        run_seed = int(cfg.random_state) + r
+        W_cells, H_run, rmse, n_iter = _fit_single_nmf(X_base, cfg, run_seed)
 
         frob_rmse_runs.append(rmse)
         n_iter_runs.append(n_iter)
 
         # gene-level program loadings: W_genes [G, K]
-        W_genes = H.T  # (G, K)
+        W_genes = H_run.T  # (G, K)
 
         # L2-normalize each program so clustering is about *shape* not scale
         norms = np.linalg.norm(W_genes, axis=0, keepdims=True) + 1e-8
         W_genes_norm = W_genes / norms  # (G, K)
 
-        # append each program as a separate row
+        # append each program as a separate row in program space
         for j in range(K):
             all_programs.append(W_genes_norm[:, j])
 
@@ -284,34 +266,23 @@ def run_cnmf(
     # ----- KMeans clustering in program space -----
     kmeans = KMeans(
         n_clusters=K,
-        random_state=cfg.random_state,
-        n_init=cfg.kmeans_n_init,
-        max_iter=cfg.kmeans_max_iter,
-        tol=cfg.kmeans_tol,
+        random_state=int(cfg.random_state),
+        n_init=int(cfg.consensus_kmeans_n_init),
         verbose=0,
     )
     labels = kmeans.fit_predict(programs_all)       # (R*K,)
     centers = kmeans.cluster_centers_              # (K, G) in normalized space
 
     # ----- Stability metrics per consensus program -----
-    # 1) how many original programs ended up in each cluster?
-    K = int(cfg.n_components)
-    R = int(cfg.n_restarts)
     program_counts = np.bincount(labels, minlength=K)  # [K]
 
-    # 2) run-level coverage: for each cluster k, in how many restarts
-    #    did at least one of that run's programs land in cluster k?
-    # programs are ordered as [run0: 0..K-1], [run1: K..2K-1], ...
     run_coverage = np.zeros(K, dtype=np.float32)  # [K]
     for r in range(R):
         start = r * K
         end = (r + 1) * K
         labels_r = labels[start:end]  # cluster IDs for run r's K programs
-        # which clusters got at least one program from this run?
         present = np.unique(labels_r)
         run_coverage[present] += 1.0
-
-    # normalize to fraction of runs (0..1)
     run_coverage /= float(R)
 
     print(
@@ -322,38 +293,44 @@ def run_cnmf(
         flush=True,
     )
 
-
-    # Undo L2 norm scaling—not really needed, but we can renormalize to unit L2
-    # and then rely on downstream scaling via ΔE anyway.
-    # We'll just ensure non-negative and L2-normalize columns of W_consensus.
-    W_consensus = centers.T  # (G, K)
+    # ----- Build consensus W and apply coverage filtering -----
+    W_full = centers.T  # (G, K)
 
     # enforce non-negativity (numerical noise)
-    W_consensus = np.clip(W_consensus, a_min=0.0, a_max=None)
+    W_full = np.clip(W_full, a_min=0.0, a_max=None)
 
-    # optional column-wise normalization (e.g., sum to 1 per program)
-    col_sums = W_consensus.sum(axis=0, keepdims=True) + 1e-8
-    W_consensus = W_consensus / col_sums
+    if cfg.filter_by_coverage:
+        stable_mask = run_coverage >= float(cfg.min_run_coverage)
+        if not stable_mask.any():
+            print(
+                f"[CNMF] WARNING: no programs pass min_run_coverage={cfg.min_run_coverage}; "
+                "keeping all programs.",
+                flush=True,
+            )
+            stable_mask = np.ones(K, dtype=bool)
+    else:
+        stable_mask = np.ones(K, dtype=bool)
+
+    W_consensus = W_full[:, stable_mask]  # (G, K_stable)
 
     print(
-        f"[CNMF] Consensus W shape: {W_consensus.shape}. "
+        f"[CNMF] Consensus W_full shape: {W_full.shape}, "
+        f"W_consensus (stable) shape: {W_consensus.shape}. "
         f"Mean RMSE across runs: {np.mean(frob_rmse_runs):.4f}",
         flush=True,
     )
 
-    result: Dict[str, Any] = {
-        "W_consensus": W_consensus.astype(np.float32),    # [G, K]
-        "programs_all": programs_all.astype(np.float32),  # [R*K, G]
-        "cluster_labels": labels.astype(np.int32),        # [R*K]
-        "program_counts": program_counts.astype(np.int32),# [K]
-        "run_coverage": run_coverage.astype(np.float32),  # [K] in [0,1]
-        "frob_rmse_runs": frob_rmse_runs,
-        "n_iter_runs": n_iter_runs,
-        "cell_idx": cell_idx,
-        "gene_idx": gene_idx,
-        "cfg": asdict(cfg),
-    }
+    gene_names = np.array(ad.var_names)[gene_idx]
 
+    result = CNMFResults(
+        W_consensus=W_consensus.astype(np.float32),
+        programs_all=programs_all.astype(np.float32),
+        cluster_assignments=labels.astype(np.int32),
+        run_coverage=run_coverage.astype(np.float32),
+        gene_names=gene_names,
+        cell_idx=cell_idx.astype(np.int32),
+        config=cfg,
+    )
 
     return result
 
@@ -361,50 +338,43 @@ def run_cnmf(
 def save_cnmf_result(
     out_dir: Path,
     ad: sc.AnnData,
-    result: Dict[str, Any],
+    result: CNMFResults,
     prefix: str = "k562_cnmf",
 ) -> None:
     """
     Save consensus NMF artifacts:
 
-      - {prefix}_W_consensus.npy     : [G, K]
-      - {prefix}_programs_all.npy    : [R*K, G]
-      - {prefix}_cluster_labels.npy  : [R*K]
-      - {prefix}_genes.npy
-      - {prefix}_cells.npy
-      - {prefix}_manifest.yml
+      - {prefix}_W_consensus.npy      : [G, K_stable]
+      - {prefix}_programs_all.npy     : [R*K, G]
+      - {prefix}_cluster_labels.npy   : [R*K]
+      - {prefix}_genes.npy            : [G]
+      - {prefix}_cells.npy            : [N_used] (indices into ad.obs_names)
+      - {prefix}_run_coverage.npy     : [K]
+      - {prefix}_manifest.yml         : lightweight YAML manifest
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    W_consensus = result["W_consensus"]          # [G, K]
-    programs_all = result["programs_all"]        # [R*K, G]
-    labels = result["cluster_labels"]            # [R*K]    
-    cell_idx = result["cell_idx"]
-    gene_idx = result["gene_idx"]
-    cfg = result["cfg"]
-    program_counts = result.get("program_counts", None)
-    run_coverage = result.get("run_coverage", None)
+    W_consensus = result.W_consensus             # [G, K_stable]
+    programs_all = result.programs_all           # [R*K, G]
+    labels = result.cluster_assignments          # [R*K]
+    run_coverage = result.run_coverage           # [K]
+    genes = result.gene_names                    # [G]
+    cell_idx = result.cell_idx                   # [N_used]
 
-    genes = np.array(ad.var_names)[gene_idx]
     cells = np.array(ad.obs_names)[cell_idx]
 
     # main artifacts
     np.save(out_dir / f"{prefix}_W_consensus.npy", W_consensus)
     np.save(out_dir / f"{prefix}_programs_all.npy", programs_all)
     np.save(out_dir / f"{prefix}_cluster_labels.npy", labels)
-    np.save(out_dir / f"{prefix}_cluster_labels.npy", labels)
-    np.save(out_dir / f"{prefix}_cluster_labels.npy", labels)
     np.save(out_dir / f"{prefix}_genes.npy", genes)
     np.save(out_dir / f"{prefix}_cells.npy", cells)
-    if program_counts is not None:
-        np.save(out_dir / f"{prefix}_program_counts.npy", program_counts)
-    if run_coverage is not None:
-        np.save(out_dir / f"{prefix}_run_coverage.npy", run_coverage)
+    np.save(out_dir / f"{prefix}_run_coverage.npy", run_coverage)
 
     # lightweight manifest
     import yaml  # type: ignore
 
-    manifest = {
+    manifest: Dict[str, Any] = {
         "shape": {
             "W_consensus": list(W_consensus.shape),
             "programs_all": list(programs_all.shape),
@@ -413,16 +383,10 @@ def save_cnmf_result(
         "cells_n": int(cells.size),
         "genes_head": [str(g) for g in genes[:10]],
         "cells_head": [str(c) for c in cells[:10]],
-        "rmse_runs": [float(x) for x in result["frob_rmse_runs"]],
-        "n_iter_runs": [int(x) for x in result["n_iter_runs"]],
-        "config": cfg,
+        "run_coverage": run_coverage.tolist(),
+        "config": asdict(result.config),
     }
-    
-    if program_counts is not None:
-        manifest["program_counts"] = program_counts.tolist()
-    if run_coverage is not None:
-        manifest["run_coverage"] = run_coverage.tolist()
-        
+
     with (out_dir / f"{prefix}_manifest.yml").open("w") as f:
         yaml.safe_dump(manifest, f)
 

@@ -1,4 +1,29 @@
 #!/usr/bin/env python3
+# src/mantra/eggfm/train_grn.py
+"""
+Train the GRN GNN block on K562 with a pre-trained EGGFM energy prior.
+
+This script:
+  - parses GRN model / train / loss configs from YAML
+  - loads a QC'd K562 AnnData (for x_ref computation and gene alignment)
+  - loads train/val NPZs with regulator-level ΔE / ΔP / ΔY
+  - builds adjacency A and program loadings W (if provided)
+  - constructs an energy prior from an EGGFM checkpoint
+  - trains the GRNGNN (+ optional TraitHead)
+  - saves a GRN checkpoint with model weights and prior metadata
+
+Usage:
+
+  python scripts/train_grn.py \
+      --params configs/params.yml \
+      --out out/models/grn_hvg75 \
+      --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
+      --train-npz data/interim/grn_k562_gwps_hvg75_npz/train.npz \
+      --val-npz data/interim/grn_k562_gwps_hvg75_npz/val.npz \
+      --energy-ckpt out/models/eggfm/eggfm_energy_k562_hvg_hvg75.pt \
+      --cnmf-W out/programs/k562_cnmf_hvg75/k562_cnmf_hvg75_W_consensus.npy
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -6,16 +31,6 @@ from pathlib import Path
 
 from mantra.grn.run_grn import run_grn_training
 
-'''
-python scripts/train_grn.py \
-  --params configs/params.yml \
-  --out out/models/grn_hvg75 \
-  --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
-  --train-npz data/interim/grn_k562_gwps_hvg75_npz/train.npz \
-  --val-npz data/interim/grn_k562_gwps_hvg75_npz/val.npz \
-  --energy-ckpt out/models/eggfm/eggfm_energy_k562_hvg_hvg75.pt \
-  --cnmf-W out/programs/k562_cnmf_hvg75/k562_cnmf_hvg75_W_consensus.npy
-'''
 
 def build_argparser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(

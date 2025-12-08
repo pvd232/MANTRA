@@ -73,3 +73,6 @@ dist/
 # ---------- Maps / HTML (optional; keep if generated) ----------
 map/*.html
 map/*.png
+
+# ---------- Code pdfs ----------
+*combined_python_code*

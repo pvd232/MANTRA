@@ -1,17 +1,25 @@
 #!/usr/bin/env python
+# src/mantra/scripts/inspect_h5ad.py
 """
-Inspect an .h5ad file to understand its structure for QC ingestion.
+Inspect an .h5ad file to understand its structure for QC ingestion
+and downstream modeling.
+
+This script:
+  - prints AnnData shape and X type
+  - summarizes obs (cell metadata) columns, dtypes, and value distributions
+  - highlights likely-important obs columns (e.g. batch, cell_type, state)
+  - summarizes var (gene metadata) columns and example gene names
 
 Usage:
-  conda run -n venv python scripts/inspect_h5ad.py \
-      --h5ad data/raw/weinreb/stateFate_inVitro/stateFate_inVitro_normed_counts.h5ad
+
+  python scripts/inspect_h5ad.py \
+      --h5ad data/interim/k562_gwps_unperturbed_qc.h5ad
 """
 
 import argparse
-import numpy as np
+
 import scanpy as sc
-import pandas as pd
-from pandas.api.types import is_numeric_dtype, is_categorical_dtype
+from pandas.api.types import is_categorical_dtype, is_numeric_dtype
 
 
 def inspect_h5ad(path: str) -> None:

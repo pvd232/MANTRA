@@ -14,29 +14,36 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]) -> sc.AnnData:
     """
     Core QC + HVG selection + normalization on an in-memory AnnData.
     Returns a new AnnData containing only QC-passing cells + HVGs,
-    log-normalized in ad.X.
+    log-normalized in ad.X, with raw counts saved in ad.layers['counts'].
     """
     n_cells = ad.n_obs
 
-    # Remove genes that are not statistically relevant (< 0.1% of cells)
-    min_cells = max(3, int(0.001 * n_cells))
+    # -------------------------
+    # 1. Gene + cell filters
+    # -------------------------
+    # Use qc.min_cells if provided, else fallback to 0.1% of cells
+    qc_cfg = params.get("qc", {})
+    min_cells_cfg = int(qc_cfg.get("min_cells", 0))
+    if min_cells_cfg > 0:
+        min_cells = min_cells_cfg
+    else:
+        min_cells = max(3, int(0.001 * n_cells))
+
+    print(f"[QC] filter_genes min_cells={min_cells}", flush=True)
     sc.pp.filter_genes(ad, min_cells=min_cells)
 
-    # Remove empty droplets (cells with no detected genes)
-    sc.pp.filter_cells(ad, min_genes=int(params["qc"]["min_genes"]))
+    sc.pp.filter_cells(ad, min_genes=int(qc_cfg["min_genes"]))
 
     # Drop zero-count cells
     totals = np.ravel(ad.X.sum(axis=1))
     ad = ad[totals > 0, :].copy()
 
-    # Cells with high percent of mitochondrial DNA are dying or damaged
-    ad = ad[ad.obs["mitopercent"] < float(params["qc"]["max_pct_mt"])].copy()
+    # Mito filter
+    ad = ad[ad.obs["mitopercent"] < float(qc_cfg["max_pct_mt"])].copy()
 
     print("AnnData layers:", list(ad.layers.keys()), flush=True)
     print("AnnData obs columns:", list(ad.obs.columns), flush=True)
     print("AnnData var columns:", list(ad.var.columns), flush=True)
-
-    # How many genes/cells remain just before HVG?
     print("n_obs, n_vars:", ad.n_obs, ad.n_vars, flush=True)
 
     # Check for inf/nan in means explicitly:
@@ -50,21 +57,50 @@ def prep(ad: sc.AnnData, params: Dict[str, Any]) -> sc.AnnData:
     print("Means min/max:", np.nanmin(means), np.nanmax(means), flush=True)
     print("# non-finite means:", np.sum(~np.isfinite(means)), flush=True)
 
-    # No raw counts object so we must use ad.X
+    # -------------------------
+    # 2. Preserve raw counts
+    # -------------------------
+    # Save raw counts BEFORE HVG subset + normalization/log.
+    # This will be written to disk as a 'counts' layer in the QC .h5ad.
+    if "counts" not in ad.layers:
+        # For large matrices, this is still sparse-aware if ad.X is sparse
+        ad.layers["counts"] = ad.X.copy()
+        print("[QC] Saved raw counts into ad.layers['counts']", flush=True)
+    else:
+        print("[QC] ad.layers['counts'] already present; not overwriting.", flush=True)
+
+    # -------------------------
+    # 3. HVG selection
+    # -------------------------
+    hvg_n_top = int(params["hvg_n_top_genes"])
+    print(f"[QC] Computing HVGs with n_top_genes={hvg_n_top}", flush=True)
+
     sc.pp.highly_variable_genes(
         ad,
-        n_top_genes=int(params["hvg_n_top_genes"]),
+        n_top_genes=hvg_n_top,
         flavor="seurat_v3",
         subset=False,
     )
 
-    ad = ad[:, ad.var["highly_variable"]].copy()
+    n_hvg = int(ad.var["highly_variable"].sum())
+    print(
+        f"[QC] HVGs flagged={n_hvg} (requested n_top_genes={hvg_n_top}); "
+        f"n_vars BEFORE subset={ad.n_vars}",
+        flush=True,
+    )
 
-    # now normalize/log on X (leave counts in layer untouched)
+    ad = ad[:, ad.var["highly_variable"]].copy()
+    print(f"[QC] n_vars AFTER HVG subset={ad.n_vars}", flush=True)
+
+    # -------------------------
+    # 4. Normalize / log-transform
+    # -------------------------
+    # Now normalize/log on X; raw counts are preserved in ad.layers['counts'].
     sc.pp.normalize_total(ad, target_sum=1e4)
     sc.pp.log1p(ad)
 
     return ad
+
 
 
 def run_qc(
@@ -140,7 +176,9 @@ def run_qc(
     qc_ad = prep(ad.copy(), params)
 
     print(f"[write] writing QC AnnData to {out_path}", flush=True)
+    print("        QC ad.X shape:", qc_ad.X.shape, flush=True)
+    if "counts" in qc_ad.layers:
+        print("        QC counts layer shape:", qc_ad.layers["counts"].shape, flush=True)
     qc_ad.write_h5ad(out_path)
-    print("[done]", flush=True)
 
     return qc_ad

@@ -1,23 +1,40 @@
 #!/usr/bin/env python3
+# src/mantra/scripts/make_grn_npz.py
+"""
+Streamingly aggregate K562 GWPS / Perturb-seq into train/val NPZs
+in the EGGFM HVG space, using the energy checkpoint var_names.
+
+This script:
+  - opens the large raw K562 GWPS AnnData in backed mode
+  - applies basic QC on cells (mito percent, UMI count)
+  - identifies control vs. perturbed cells using an obs "reg" column
+  - computes regulator-level ΔE (and optionally ΔP_obs via cNMF W)
+  - performs a train/val split
+  - saves compressed NPZ files with:
+      reg_idx, deltaE, deltaP_obs, deltaY_obs, dose
+
+Typical usage:
+
+  python scripts/make_grn_npz.py \
+      --ad-raw data/raw/k562_gwps.h5ad \
+      --energy-ckpt out/models/eggfm/eggfm_energy_k562_hvg_hvg75.pt \
+      --out-dir data/interim/grn_k562_gwps_hvg75_npz \
+      --reg-col gene \
+      --control-value non-targeting \
+      --max-pct-mt 0.2 \
+      --min-umi 2000 \
+      --min-cells-per-group 10 \
+      --val-frac 0.2 \
+      --seed 7
+"""
+
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
 from mantra.grn.make_npz import make_grn_npz
-'''
-python scripts/make_grn_npz.py \
-  --ad-raw data/raw/k562_gwps.h5ad \
-  --energy-ckpt out/models/eggfm/eggfm_energy_k562_hvg_hvg75.pt \
-  --out-dir data/interim/grn_k562_gwps_hvg75_npz \
-  --reg-col gene \
-  --control-value non-targeting \
-  --max-pct-mt 0.2 \
-  --min-umi 2000 \
-  --min-cells-per-group 10 \
-  --val-frac 0.2 \
-  --seed 7
-'''
+
 
 def build_argparser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
