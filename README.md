@@ -65,11 +65,9 @@ You can train EGGFM either on **HVG expression** (`ad.X` in the HVG-restricted s
 - EGGFM in raw HVG space, versus  
 - EGGFM on top of a classical embedding (e.g. PCA-50).
 
-### 3.1 HVG selection and ablations
+We start from a QC’d K562 AnnData with ~3k HVGs annotated. We then subselect smaller HVG panels for EGGFM using `eggfm_train.max_hvg`:
 
-We start from a QC’d K562 AnnData with ~3k HVGs annotated. We then subselect smaller HVG panels for EGGFM:
-
-- HVG ∈ {50, 75, 100, 150, 200, 250, 500, 3000}
+- HVG ∈ {50, 75, 100, 150, 200, 250, 500, 3000} across ablation runs
 
 Empirically:
 
@@ -80,7 +78,7 @@ Empirically:
   - computational tractability  
   - reduced curvature pathologies  
 
-We currently focus on **HVG=75** and **HVG=100** as main EGGFM spaces, and compare them via:
+In the **current code path**, we treat **HVG=100** (i.e. `eggfm_train.max_hvg: 100`) as the **canonical space shared by EGGFM, cNMF, NPZs, and the GRN**, while **HVG=75** is kept as an explicit ablation run.
 
 - DSM loss curves  
 - Downstream GRN training behavior (expr vs geo loss)  
@@ -148,13 +146,13 @@ After QC and HVG extraction (3k HVGs), we compute several **manifold baselines**
 
 ### 5.1 Included views in `.obsm`
 
-- `X_hvg_trunc` — raw expression of top-k HVGs (e.g. 150)  
-- `X_pca` — Scanpy PCA (e.g. 20 or 50 PCs)  
-- `X_diffmap` — Diffusion Map (20D)  
-- `X_umap` — UMAP on PCA space (20D)  
-- `X_phate` — PHATE (optional, if installed)  
-- `X_isomap` — Isomap (optional, slower)  
-- `X_spectral` — Laplacian eigenmaps (optional)
+- `X_hvg_trunc` — raw expression of top-k HVGs
+- `X_pca` — Scanpy PCA
+- `X_diffmap` — Diffusion Map 
+- `X_umap` — UMAP on PCA space
+- `X_phate` — PHATE
+
+These are configured via the `embeddings` block in `configs/params.yml` and computed by `scripts/hvg_embed.py`, which always operates on the HVG subset of the QC AnnData.
 
 ### 5.2 Excluded / future work
 
@@ -346,10 +344,10 @@ configs/
   env.yml
 scripts/
   qc.py                 # QC + HVG selection on raw GWPS
-  hvg_embed.py          # PCA / DiffMap / UMAP / PHATE on HVGs
+  hvg_embed.py          # PCA / DiffMap / UMAP / PHATE on HVGs (config-driven)
   train_energy.py       # EGGFM (HVG or embedding space)
   make_grn_npz.py       # Streaming ΔE NPZ construction
-  cnmf_programs.py      # cNMF program discovery (W aligned to EGGFM genes)
+  cnmf.py               # cNMF program discovery (W aligned to EGGFM genes)
   train_grn.py          # GRN GNN training with energy prior
 src/
   mantra/
@@ -417,24 +415,22 @@ python scripts/qc.py \
 
 ```bash
 python scripts/hvg_embed.py \
+  --params configs/params.yml \
   --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
-  --out data/interim/k562_gwps_unperturbed_hvg_embeddings.h5ad \
-  --n-components 50 \
-  --n-neighbors 30 \
-  --seed 7
+  --out data/interim/k562_gwps_unperturbed_hvg_embeddings.h5ad
 ```
 
 ### 12.3 Train EGGFM (HVG space; main DSM ablations)
 
 ```bash
-# HVG = 75
+# HVG = 75 (set eggfm_train.max_hvg: 75 in configs/params.yml)
 python scripts/train_energy.py \
   --params configs/params.yml \
   --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
   --out out/models/eggfm \
   --space hvg
 
-# HVG = 100
+# HVG = 100 (canonical end-to-end space: EGGFM, cNMF, NPZs, GRN)
 # (set eggfm_train.max_hvg: 100 in configs/params.yml before this run)
 python scripts/train_energy.py \
   --params configs/params.yml \

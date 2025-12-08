@@ -9,8 +9,9 @@ import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
 
-from mantra.grn.models import GRNGNN, TraitHead, GRNLossConfig, compute_grn_losses
-from mantra.grn.config import GRNTrainConfig
+from mantra.grn.models import GRNGNN, TraitHead
+from mantra.grn.config import GRNTrainConfig, GRNLossConfig
+
 
 class GRNTrainer:
     """
@@ -246,3 +247,76 @@ class GRNTrainer:
         self.grn_model.load_state_dict(state["grn"])
         if self.trait_head is not None and "trait_head" in state:
             self.trait_head.load_state_dict(state["trait_head"])
+
+
+def compute_grn_losses(
+    model: GRNGNN,
+    A: torch.Tensor,                           # [G, G]
+    batch: dict[str, torch.Tensor],
+    x_ref: torch.Tensor,                       # [G]
+    energy_prior: nn.Module,                      # EnergyScorerPrior
+    W: torch.Tensor,                           # [G, K]
+    loss_cfg: GRNLossConfig,
+    trait_head: Optional[nn.Module] = None,
+) -> dict[str, torch.Tensor]:
+    device = next(model.parameters()).device
+
+    reg_idx = batch["reg_idx"].to(device)      # [B]
+    deltaE_obs = batch["deltaE"].to(device)    # [B, G]
+
+    dose = batch.get("dose", None)
+    if dose is not None:
+        dose = dose.to(device)
+
+    A = A.to(device)
+    x_ref = x_ref.to(device)
+    W = W.to(device)
+
+    # 1) ΔE prediction
+    deltaE_pred = model(reg_idx=reg_idx, dose=dose, A=A)  # [B, G]
+
+    # 2) Expression loss
+    L_expr = ((deltaE_pred - deltaE_obs) ** 2).mean()
+
+    # 3) Geometric prior (frozen EGGFM)
+    x_hat = x_ref.unsqueeze(0) + deltaE_pred   # [B, G]
+
+    # energy at current prediction
+    energy = energy_prior(x_hat)               # [B]
+
+    # energy at reference control point (x_ref is already in ckpt)
+    with torch.no_grad():
+        energy_ref = energy_prior(x_ref.unsqueeze(0)).mean()
+
+    # penalize energy ABOVE reference
+    rel_energy = energy - energy_ref           # can be ±
+    rel_energy_pos = torch.relu(rel_energy)    # only push down high-energy states
+
+    L_geo = float(loss_cfg.lambda_geo) * rel_energy_pos.mean()
+
+    # 4) Program-level supervision
+    deltaP_pred = deltaE_pred @ W              # [B, K]
+
+    L_prog = torch.zeros((), device=device)
+    if "deltaP_obs" in batch:
+        deltaP_obs = batch["deltaP_obs"].to(device)
+        L_prog = loss_cfg.lambda_prog * ((deltaP_pred - deltaP_obs) ** 2).mean()
+
+    # 5) Trait head (optional)
+    L_trait = torch.zeros((), device=device)
+    if trait_head is not None and "deltaY_obs" in batch:
+        deltaY_obs = batch["deltaY_obs"].to(device)
+        deltaY_pred = trait_head(deltaP_pred)
+        L_trait = loss_cfg.lambda_trait * ((deltaY_pred - deltaY_obs) ** 2).mean()
+
+    L_total = L_expr + L_geo + L_prog + L_trait
+
+    return {
+        "loss": L_total,
+        "L_expr": L_expr.detach(),
+        "L_geo": L_geo.detach(),
+        "L_prog": L_prog.detach(),
+        "L_trait": L_trait.detach(),
+        "deltaE_pred": deltaE_pred.detach(),
+        "deltaP_pred": deltaP_pred.detach(),
+    }

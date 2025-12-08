@@ -79,14 +79,6 @@ def run_grn_training(
 
     # ---- energy checkpoint (and enforce HVG space) ----
     ckpt = torch.load(energy_ckpt_path, map_location="cpu")
-    space = ckpt.get("space", "hvg")
-    if space != "hvg":
-        raise ValueError(
-            f"Energy checkpoint space={space!r}; GRN currently expects an "
-            "EGGFM prior trained directly in HVG gene space (space='hvg'). "
-            "Use an HVG-space checkpoint when building NPZs and training GRN."
-        )
-
     hvg_names = np.array(ckpt["var_names"])
     if hvg_names.shape[0] != G:
         raise ValueError(

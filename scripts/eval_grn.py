@@ -13,7 +13,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from mantra.grn.dataset import K562RegDeltaDataset
-from mantra.grn.models import GRNGNN, TraitHead, compute_grn_losses
+from mantra.grn.models import GRNGNN, TraitHead
+from mantra.grn.trainer import compute_grn_losses
 from mantra.grn.priors import build_energy_prior_from_ckpt
 
 

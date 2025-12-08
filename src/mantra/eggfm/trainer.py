@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 
 import numpy as np
 import torch
@@ -143,8 +143,6 @@ class EnergyTrainer:
 # High-level convenience wrapper: AnnData -> EnergyModelBundle
 # --------------------------------------------------------------------
 
-# src/mantra/eggfm/trainer.py
-
 def train_energy_model(
     ad_prep: sc.AnnData,
     model_cfg: EnergyModelConfig,
@@ -152,47 +150,74 @@ def train_energy_model(
     latent_space: str = "hvg",
 ) -> EnergyModelBundle:
     """
-    AnnData -> AnnDataExpressionDataset -> EnergyMLP -> EnergyTrainer.
+    Convenience wrapper used by scripts:
+    AnnData -> AnnDataExpressionDataset -> EnergyMLP -> EnergyTrainer
 
-    latent_space:
+    `latent_space` controls which representation we train on:
       - "hvg": use ad_prep.X  (HVG log-normalized expression)
-      - anything else: use ad_prep.obsm[latent_space] (e.g. "X_pca", "X_phate")
+      - "pca": run PCA on HVG expression and train in that latent space
+      - (other strings can be added later as needed)
     """
-    # -------- dataset: HVG or embedding --------
-    if latent_space == "hvg":
-        X = ad_prep.X
-        # true gene names in this space
-        feature_names = np.array(ad_prep.var_names.astype(str))
-    else:
-        if latent_space not in ad_prep.obsm:
-            raise KeyError(
-                f"Requested latent_space={latent_space!r}, "
-                f"but it is not in ad_prep.obsm. "
-                f"Available keys: {list(ad_prep.obsm.keys())}"
-            )
-        X = ad_prep.obsm[latent_space]
-        print(f"[EGGFM trainer] Latent_space: {latent_space}", latent_space)
+    from scipy import sparse as sp_sparse
+    from sklearn.decomposition import PCA
 
-        # synthetic feature names so we *don't* confuse them with genes
-        D = X.shape[1]
-        feature_names = np.array(
-            [f"{latent_space}_{i}" for i in range(D)],
-            dtype=str,
+    # -------- pick feature space X_feat and embed_meta (f) --------
+    # Always start from HVG expression matrix in this AnnData view.
+    X_raw = ad_prep.X
+    if sp_sparse.issparse(X_raw):
+        X_raw = X_raw.toarray()
+    X_raw = np.asarray(X_raw, dtype=np.float32)  # (N, G)
+
+    if latent_space == "hvg":
+        # Identity feature map: f(x) = x
+        X_feat = X_raw  # (N, G)
+        embed_meta: Dict[str, Any] = {
+            "type": "identity",
+        }
+
+    elif latent_space == "pca":
+        # PCA latent: f(x) = (x - μ_pca) @ V_pca^T
+        # Number of components: from train_cfg if available, else default to 20.
+        n_components = getattr(train_cfg, "latent_n_components", 20)
+        print(
+            f"[EGGFM trainer] Using PCA latent space with n_components={n_components}",
+            flush=True,
+        )
+        pca = PCA(n_components=n_components, random_state=getattr(train_cfg, "seed", 0))
+        X_feat = pca.fit_transform(X_raw).astype(np.float32)  # (N, D_pca)
+
+        embed_meta = {
+            "type": "pca",
+            "mean": pca.mean_.astype(np.float32),         # (G,)
+            "components": pca.components_.astype(np.float32),  # (D_pca, G)
+            "n_components": int(n_components),
+        }
+
+    else:
+        raise ValueError(
+            f"Unsupported latent_space={latent_space!r}. "
+            "Use 'hvg' or 'pca' for now."
         )
 
-    dataset = AnnDataExpressionDataset(X)
-    n_genes = dataset.X.shape[1]
+    # -------- dataset in the chosen feature space --------
+    dataset = AnnDataExpressionDataset(X_feat)
+    n_genes = dataset.X.shape[1]  # feature dim = D (HVG or PCA)
 
     # record normalization (always in the *model feature space*)
     mean = dataset.mean  # [D]
     std = dataset.std    # [D]
 
+    # For both HVG and PCA we keep the gene names (for alignment later).
+    feature_names = np.array(ad_prep.var_names)
+
+    # -------- model --------
     hidden_dims = tuple(model_cfg.hidden_dims)
     model = EnergyMLP(
         n_genes=n_genes,
         hidden_dims=hidden_dims,
     )
 
+    # -------- trainer --------
     trainer = EnergyTrainer(
         model=model,
         dataset=dataset,
@@ -206,4 +231,5 @@ def train_energy_model(
         std=std,
         feature_names=feature_names,
         space=latent_space,
+        embed_meta=embed_meta,
     )

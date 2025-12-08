@@ -6,9 +6,8 @@ from .models import (
     GeneGNNLayer,
     GRNGNN,
     TraitHead,
-    compute_grn_losses,
 )
-from .trainer import GRNTrainer
+from .trainer import GRNTrainer, compute_grn_losses
 from .config import GRNModelConfig, GRNTrainConfig, GRNLossConfig
 
 __all__ = [

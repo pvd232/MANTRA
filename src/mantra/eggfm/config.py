@@ -14,7 +14,7 @@ EnergyModelBundle:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence, Optional, List
+from typing import Sequence, Optional, List, Dict, Any
 
 import numpy as np
 from torch import nn
@@ -83,3 +83,7 @@ class EnergyModelBundle:
     # Optional metadata
     feature_names: Optional[List[str]] = None  # gene IDs or embedding feature names
     space: str = "hvg"                         # e.g. "hvg", "X_pca", "embedding"
+    
+    # - for HVG: {"type": "identity"}
+    # - for PCA: {"type": "pca", "mean": np.ndarray, "components": np.ndarray}
+    embed_meta: Optional[Dict[str, Any]] = None

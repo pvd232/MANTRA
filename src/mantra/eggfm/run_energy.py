@@ -63,37 +63,34 @@ def run_energy_training(
     else:
         print("No 'highly_variable' flag in ad.var; using all genes as-is.")
 
-    # 4) Train energy model
+    # 4) Train energy model in the requested feature space
     bundle = train_energy_model(
         ad_prep=ad_prep,
         model_cfg=model_cfg,
         train_cfg=train_cfg,
         latent_space=space,
     )
-    
-    if bundle.space != "hvg":
-        raise ValueError(
-            f"Expected energy model in HVG space, got {bundle.space!r}. "
-            "For embedding ablations, use a separate experimental path."
-        )
-        
+
     energy_model = bundle.model
     mean = bundle.mean
     std = bundle.std
     var_names = bundle.feature_names
+    embed_meta = bundle.embed_meta or {"type": "identity"}
 
-    # 5) Save checkpoint
+    # 5) Save checkpoint (includes feature-space + embedding metadata)
     ckpt = {
         "state_dict": energy_model.state_dict(),
         "model_cfg": {
             "hidden_dims": list(model_cfg.hidden_dims),
         },
-        "n_genes": energy_model.n_genes,
-        "var_names": var_names,
+        "n_genes": energy_model.n_genes,  # feature dimension (HVG or PCA)
+        "var_names": var_names,           # gene names used to define x-space
         "mean": mean,
         "std": std,
-        "space": bundle.space,
+        "space": bundle.space,            # "hvg" or "pca"
+        "embed_meta": embed_meta,         # describes f(x)
     }
+
 
     space_tag = str(bundle.space).replace("X_", "")  # e.g. "hvg", "pca"
     n_genes = int(energy_model.n_genes)
