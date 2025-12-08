@@ -44,8 +44,6 @@ def run_energy_training(
     # 3) restrict to HVGs if present
     if "highly_variable" in ad_prep.var:
         ad_prep = ad_prep[:, ad_prep.var["highly_variable"]].copy()
-        print(f"Using HVGs only: n_vars = {ad_prep.n_vars}")
-
         # further clamp HVGs to top N by dispersions_norm
         max_hvg = params["eggfm_train"].get("max_hvg", None)
         if max_hvg is not None and ad_prep.n_vars > max_hvg:

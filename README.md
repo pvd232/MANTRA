@@ -487,18 +487,18 @@ python scripts/make_grn_npz.py \
 
 ```bash
 # HVG 75: build W aligned to the 75-gene EGGFM / NPZ space
-python scripts/cnmf_programs.py \
+python scripts/cnmf.py \
   --params configs/params.yml \
   --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
   --energy-ckpt out/models/eggfm/eggfm_energy_k562_hvg_hvg75.pt \
-  --out-prefix out/programs/k562_hvg75
+  --out out/programs/k562_hvg75
 
 # HVG 100: build W aligned to the 100-gene EGGFM / NPZ space
-python scripts/cnmf_programs.py \
+python scripts/cnmf.py \
   --params configs/params.yml \
   --ad data/interim/k562_gwps_unperturbed_qc.h5ad \
   --energy-ckpt out/models/eggfm/eggfm_energy_k562_hvg_hvg100.pt \
-  --out-prefix out/programs/k562_hvg100
+  --out out/programs/k562_hvg100
 ```
 
 ### 12.7 Train GRN (GNN with energy prior)

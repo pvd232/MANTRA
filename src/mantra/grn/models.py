@@ -49,6 +49,7 @@ class ConditionEncoder(nn.Module):
 
         self.out = nn.Sequential(
             nn.Linear(in_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
         )
 
@@ -95,6 +96,7 @@ class GeneGNNLayer(nn.Module):
         super().__init__()
         self.linear = nn.Linear(d_in, d_out)
         self.cond_to_film = nn.Linear(d_cond, 2 * d_out)
+        self.norm = nn.LayerNorm(d_out)
         self.act = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
 
@@ -112,9 +114,10 @@ class GeneGNNLayer(nn.Module):
         gamma_beta = self.cond_to_film(cond)     # [B, 2*d_out]
         gamma, beta = gamma_beta.chunk(2, dim=-1)  # [B, d_out] each
         gamma = gamma.unsqueeze(1)               # [B, 1, d_out]
-        beta = beta.unsqueeze(1)                 # [B, 1, d_out]
-
-        out = self.act(gamma * h_lin + beta)
+        beta = beta.unsqueeze(1)                 # [B, 1, d_out]        
+        h_film = gamma * h_lin + beta
+        h_norm = self.norm(h_film)
+        out = self.act(h_norm)
         out = self.dropout(out)
         return out
 

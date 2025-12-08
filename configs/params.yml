@@ -64,7 +64,7 @@ eggfm_train:
   early_stop_min_delta: 0.0
   device: cuda
   # n_cells_sample: 60000
-  max_hvg: 100
+  # max_hvg: 100
 
 grn_model:
   n_layers: 3
