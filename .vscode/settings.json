@@ -1,0 +1,9 @@
+{
+    "python.defaultInterpreterPath": "/home/machina/miniconda3/envs/mantra",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}"
+    ],
+    "terminal.integrated.env.linux": {
+        "PYTHONPATH": "${workspaceFolder}"
+    }
+}

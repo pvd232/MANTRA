@@ -1,0 +1,107 @@
+seed: 7
+hvg_n_top_genes: 2000
+
+qc:
+  min_cells: 500
+  min_genes: 200
+  max_pct_mt: 15
+
+cnmf:
+  # -------------------------
+  # Core factorization setup
+  # -------------------------
+  n_components: 75          # K = # programs; start with 50–100, 75 is a good K562 default
+  n_restarts: 20            # R = # independent NMF runs for consensus
+  max_iter: 400             # per-run NMF iterations
+  tol: 1e-4                 # convergence tolerance
+
+  # -------------------------
+  # Data / preprocessing
+  # -------------------------
+  use_hvg_only: true        # work only on HVGs (recommended)
+  hvg_key: "highly_variable"
+  min_cells_per_gene: 10    # drop genes expressed in < this many cells
+  scale_cells: true         # L1 / library-size normalize per cell before NMF
+
+  # -------------------------
+  # NMF regularization
+  # -------------------------
+  alpha: 0.0                # overall regularization strength
+  l1_ratio: 0.0             # 0 = pure L2, 1 = pure L1; keep 0.0 unless you need sparsity
+
+  # -------------------------
+  # Consensus clustering
+  # -------------------------
+  consensus_kmeans_n_init: 10 # n_init for KMeans on R*K program matrix
+
+  # Coverage filter for "stable" programs
+  filter_by_coverage: true    # if true, drop unstable programs
+  min_run_coverage: 0.7       # keep programs that appear in ≥70% of runs
+
+  # -------------------------
+  # Reproducibility
+  # -------------------------
+  random_state: 7             # master seed for NMF + KMeans
+
+
+
+traits:
+  primary: MCH
+  extras: [RDW, IRF]
+
+eggfm_model:
+  hidden_dims: [512, 512, 512, 512]
+
+eggfm_train:
+  batch_size: 4096
+  num_epochs: 100
+  lr: 3e-3
+  sigma: 0.2
+  weight_decay: 0.0
+  grad_clip: 1.0
+  early_stop_patience: 10
+  early_stop_min_delta: 0.0
+  device: cuda
+  max_hvg: 100
+  # n_cells_sample: 60000
+
+grn_model:
+  n_layers: 3
+  gene_emb_dim: 64
+  hidden_dim: 128
+  dropout: 0.1
+  use_dose: false
+  n_traits: 0        # if > 0, build TraitHead
+  trait_hidden_dim: 64
+
+grn_train:
+  batch_size: 16
+  lr: 1e-4
+  weight_decay: 0.0
+  max_epochs: 50
+  grad_clip: 1.0
+  early_stop_patience: 10
+  early_stop_min_delta: 0.0
+  use_cosine_lr: false
+  cosine_eta_min: 1e-7
+
+grn_loss:
+  lambda_geo: 0.002
+  lambda_prog: 0.0
+  lambda_trait: 0.0
+
+
+embeddings:
+  n_components: 20
+  n_neighbors: 30
+  seed: 0
+
+  use_hvg_only: true
+  hvg_key: "highly_variable"
+  hvg_trunc: 100      # or null to use n_components
+
+  run_hvg_trunc: false
+  run_pca: true
+  run_diffmap: true
+  run_umap: true
+  run_phate: true

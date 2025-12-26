@@ -45,18 +45,9 @@ We are currently actively developing **[CURRENT_VERSION]**, which aims to solve 
 
 ## Quick Start (Running SOTA)
 
-### 0. Environment Setup
-**CRITICAL**: You must activate the project environment before running any code.
-```bash
-source init_project.sh      # One-step setup (sets PYTHONPATH + conda)
-# OR manually:
-conda activate [ENV_NAME]
-```
-
-### 1. Minimal Example
 ```python
 import sys
-sys.path.append("experiments/[topic]/[EXP_ID]/models")
+sys.path.append("experiments/[EXP_ID]/models")
 from [MODEL_FILE] import [MODEL_CLASS]
 
 # 1. Initialize
@@ -67,6 +58,32 @@ model = [MODEL_CLASS](
 # 2. Run
 # [EXAMPLE_USAGE_CODE]
 ```
+
+---
+
+## Agent Setup Instructions 🤖
+
+**If you are an AI agent initializing this project for the first time:**
+
+1. **Load Context** (use `view_file`):
+   - `README.md` (this file)
+   - `ROADMAP.md`
+   - `PROTOCOLS.md`
+   - `migration_kit/AGENT_CHEATSHEET.md`
+
+2. **Understand Current State**:
+   - Check `ROADMAP.md` for current phase
+   - Read latest experiment journal: `experiments/v[LATEST]/journal.md`
+   - Review `experiments/LEADERBOARD.md` for SOTA
+
+3. **Before Starting Work**:
+   - Confirm you understand the North Star metrics
+   - Know which experiment version you're working on
+   - Load the previous experiment's journal into context
+
+**Your workflow reference is in** [`migration_kit/AGENT_CHEATSHEET.md`](migration_kit/AGENT_CHEATSHEET.md).
+
+---
 
 ## Citation
 [AUTHORS], [YEAR]. **[PROJECT_TITLE]**.

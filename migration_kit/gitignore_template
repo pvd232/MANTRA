@@ -7,27 +7,16 @@ __pycache__/
 env/
 venv/
 .env
-.pytest_cache/
 
 # Jupyter
 .ipynb_checkpoints
 
-# Large Files & ML Artifacts
+# Large Files
 *.pt
 *.pth
 *.ckpt
 *.bin
 *.onnx
-*.npz
-*.h5ad
-*.log
-echo
-
-# Project Directories
-data/interim/
-data/raw/
-data/smr/
-out/
 
 # Experiment Hygiene (The "Descriptive Root" Rules)
 # 1. Ignore bulky artifacts in experiments
