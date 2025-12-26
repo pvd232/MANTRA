@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 
 from mantra.grn.models import GRNGNN, TraitHead
 from mantra.grn.config import GRNTrainConfig, GRNLossConfig
+from mantra.nexus.adapter import NexusAdapter
 
 
 class GRNTrainer:
@@ -41,6 +42,7 @@ class GRNTrainer:
         energy_prior: nn.Module,
         loss_cfg: GRNLossConfig,
         train_cfg: GRNTrainConfig,
+        nexus_adapter: Optional[NexusAdapter] = None,
         device: Optional[str] = None,
     ) -> None:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -55,6 +57,7 @@ class GRNTrainer:
         self.energy_prior = energy_prior.to(self.device)
         self.loss_cfg = loss_cfg
         self.train_cfg = train_cfg
+        self.nexus_adapter = nexus_adapter.to(self.device) if nexus_adapter is not None else None
 
         params = list(self.grn_model.parameters())
         if self.trait_head is not None:
@@ -219,6 +222,7 @@ class GRNTrainer:
             W=self.W,
             loss_cfg=self.loss_cfg,
             trait_head=self.trait_head,
+            nexus_adapter=self.nexus_adapter,
         )
         loss = out["loss"]
 
@@ -258,6 +262,7 @@ def compute_grn_losses(
     W: torch.Tensor,                           # [G, K]
     loss_cfg: GRNLossConfig,
     trait_head: Optional[nn.Module] = None,
+    nexus_adapter: Optional[NexusAdapter] = None,
 ) -> dict[str, torch.Tensor]:
     device = next(model.parameters()).device
 
@@ -295,6 +300,11 @@ def compute_grn_losses(
 
     # 4) Program-level supervision
     deltaP_pred = deltaE_pred @ W              # [B, K]
+
+    # [Nexus Integration]
+    if nexus_adapter is not None:
+        deltaP_corr = nexus_adapter(reg_idx=reg_idx, dose=dose)
+        deltaP_pred = deltaP_pred + deltaP_corr
 
     L_prog = torch.zeros((), device=device)
     if "deltaP_obs" in batch and loss_cfg.lambda_prog != 0.0:
