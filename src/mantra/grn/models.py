@@ -79,23 +79,24 @@ class ConditionEncoder(nn.Module):
 
 class GeneGNNLayer(nn.Module):
     """
-    Single message-passing layer with FiLM conditioning on global cond vector.
-
-    Inputs:
-        h:    [B, G, d_in]  node features
-        cond: [B, d_cond]   global condition (reg ± dose)
-        A:    [G, G]        (row- or sym-normalized adjacency)
+    FiLM-conditioned GNN layer with Nexus Recursive Injection (V4).
     """
     def __init__(
         self,
         d_in: int,
         d_out: int,
         d_cond: int,
+        d_nexus: int,
         dropout: float = 0.0,
     ) -> None:
         super().__init__()
         self.linear = nn.Linear(d_in, d_out)
         self.cond_to_film = nn.Linear(d_cond, 2 * d_out)
+        self.nexus_to_gate = nn.Sequential(
+            nn.Linear(d_nexus, d_out),
+            nn.Sigmoid()
+        )
+        self.nexus_to_shift = nn.Linear(d_nexus, d_out)
         self.norm = nn.LayerNorm(d_out)
         self.act = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
@@ -105,16 +106,24 @@ class GeneGNNLayer(nn.Module):
         h: Tensor,        # [B, G, d_in]
         cond: Tensor,     # [B, d_cond]
         A: Tensor,        # [G, G]
+        nexus_signal: Optional[Tensor] = None, # [B, d_nexus]
     ) -> Tensor:
-        # Message passing: (G,G) x (B,G,d_in) -> (B,G,d_in)
-        agg = torch.einsum("ij,bjd->bid", A, h)  # [B, G, d_in]
-        h_lin = self.linear(agg)                 # [B, G, d_out]
+        # Message passing
+        agg = torch.einsum("ij,bjd->bid", A, h)
+        h_lin = self.linear(agg)
 
-        # FiLM from global condition
-        gamma_beta = self.cond_to_film(cond)     # [B, 2*d_out]
-        gamma, beta = gamma_beta.chunk(2, dim=-1)  # [B, d_out] each
-        gamma = gamma.unsqueeze(1)               # [B, 1, d_out]
-        beta = beta.unsqueeze(1)                 # [B, 1, d_out]        
+        # Baseline FiLM
+        gamma_beta = self.cond_to_film(cond) # [B, 2*d_out]
+        gamma, beta = gamma_beta.chunk(2, dim=-1)
+        
+        # Recursive Nexus Injection
+        if nexus_signal is not None:
+            gate = self.nexus_to_gate(nexus_signal).unsqueeze(1) # [B, 1, d_out]
+            shift = self.nexus_to_shift(nexus_signal).unsqueeze(1) # [B, 1, d_out]
+            h_lin = h_lin + gate * shift
+
+        gamma = gamma.unsqueeze(1)
+        beta = beta.unsqueeze(1)
         h_film = gamma * h_lin + beta
         h_norm = self.norm(h_film)
         out = self.act(h_norm)
@@ -129,13 +138,7 @@ class GeneGNNLayer(nn.Module):
 class GRNGNN(nn.Module):
     """
     f_theta: (reg_idx, dose?) -> ΔE_pred per gene, conditioned on gene graph.
-
-    Forward:
-        reg_idx: [B]     (long)
-        dose:    [B] or None
-        A:       [G, G]  (normalized adjacency for genes)
-
-        returns ΔE_pred: [B, G]
+    Supports Recursive Nexus Injection (V4).
     """
     def __init__(
         self,
@@ -144,6 +147,7 @@ class GRNGNN(nn.Module):
         n_layers: int = 3,
         gene_emb_dim: int = 64,
         hidden_dim: int = 128,
+        d_nexus: int = 256, # Nexus hidden state size
         dropout: float = 0.1,
         use_dose: bool = True,
     ) -> None:
@@ -165,7 +169,7 @@ class GRNGNN(nn.Module):
             0.01 * torch.randn(n_genes, gene_emb_dim)
         )
 
-        # Stack of FiLM-conditioned GNN layers
+        # Stack of FiLM-conditioned GNN layers with recursive injection
         layers = []
         d_in = gene_emb_dim
         for _ in range(n_layers):
@@ -174,6 +178,7 @@ class GRNGNN(nn.Module):
                     d_in=d_in,
                     d_out=hidden_dim,
                     d_cond=hidden_dim,
+                    d_nexus=d_nexus,
                     dropout=dropout,
                 )
             )
@@ -185,9 +190,10 @@ class GRNGNN(nn.Module):
 
     def forward(
         self,
-        reg_idx: Tensor,           # [B]
-        dose: Optional[Tensor],    # [B] or None
-        A: Tensor,                 # [G, G]
+        reg_idx: Tensor,
+        dose: Optional[Tensor],
+        A: Tensor,
+        nexus_signal: Optional[Tensor] = None, # [B, d_nexus]
     ) -> Tensor:
         cond = self.cond_encoder(
             reg_idx,
@@ -200,7 +206,7 @@ class GRNGNN(nn.Module):
 
         # GNN layers
         for layer in self.layers:
-            h = layer(h, cond, A)  # [B, G, hidden_dim]
+            h = layer(h, cond, A, nexus_signal=nexus_signal)
 
         # Per-gene linear head → ΔE_pred
         delta_e = self.readout(h).squeeze(-1)   # [B, G]
@@ -214,11 +220,6 @@ class GRNGNN(nn.Module):
 class TraitHead(nn.Module):
     """
     Simple MLP mapping program deltas ΔP -> trait deltas Δy.
-
-    Input:
-        deltaP: [B, K]
-    Output:
-        deltaY: [B, T]
     """
     def __init__(
         self,

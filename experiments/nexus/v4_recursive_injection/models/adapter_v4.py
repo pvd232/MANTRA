@@ -1,20 +1,25 @@
 import torch
 import torch.nn as nn
 from typing import Optional, Tuple, Dict
-from mantra.nexus.hybrid_transformer_v68b import HybridTransformerV68b
+import sys
+from pathlib import Path
+
+# Local import
+sys.path.append(str(Path(__file__).parent.parent.parent / "v3_functional_slotting/models"))
+from nexus_v3 import NexusV3
 from mantra.nexus.configs import NexusConfig
 from mantra.nexus.tokenizer import MLFGTokenizer
 
-class NexusAdapter(nn.Module):
+class NexusAdapter_V4(nn.Module):
     """
-    Nexus Adapter (V4): Integrates Nexus memory into MANTRA with recursive injection.
+    Nexus V4 Adapter: Provides recursive signals and global residuals.
     """
-    def __init__(self, cfg: NexusConfig, tokenizer: MLFGTokenizer):
+    def __init__(self, cfg: NexusConfig, tokenizer: MLFGTokenizer, **kwargs):
         super().__init__()
         self.cfg = cfg
         self.tokenizer = tokenizer
         
-        self.model = HybridTransformerV68b(
+        self.model = NexusV3(
             vocab_size=cfg.vocab_size,
             hidden_size=cfg.hidden_size,
             num_layers=cfg.num_layers,
@@ -23,7 +28,8 @@ class NexusAdapter(nn.Module):
             persistent_slots=cfg.persistent_slots,
             ema_alpha=cfg.ema_alpha,
             regret_gamma=cfg.regret_gamma,
-            alpha=cfg.alpha
+            alpha=cfg.alpha,
+            class_map_path=kwargs.get("class_map_path")
         )
         
         # Output head for global residual correction
@@ -38,7 +44,7 @@ class NexusAdapter(nn.Module):
         """
         Produce:
         1. nexus_signal: [B, D] (for recursive GNN injection)
-        2. deltaP_corr: [B, K] (global residual)
+        2. deltaP_corr: [B, K] (original global residual)
         """
         # Build header tokens [REG, DOSE, STATE]
         batch_tokens = []

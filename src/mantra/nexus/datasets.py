@@ -50,9 +50,19 @@ class MLFGTokenDataset(Dataset):
         l = min(len(tokens), self.max_seq_len)
         padded[:l] = tokens[:l]
         
-        return {
+        # Trait Delta Readout (Optional)
+        deltaY = None
+        if hasattr(self, "deltaY_obs"):
+            deltaY = torch.from_numpy(self.deltaY_obs[idx]).float()
+        
+        res = {
             "input_ids": padded,
-            "target": deltaP, # For Mode B: Supervised Residual
+            "target": deltaP, # DeltaP
             "reg_idx": torch.tensor(reg, dtype=torch.long),
             "dose": torch.tensor(dose, dtype=torch.float32)
         }
+        if deltaY is not None:
+            res["target_y"] = deltaY
+            
+        return res
+        

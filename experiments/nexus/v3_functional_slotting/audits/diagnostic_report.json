@@ -1,0 +1,14 @@
+{
+  "v3": {
+    "gate_density": 1.0,
+    "slot_utilization": 0.6226806640625,
+    "class_coverage": 0.340528186896902,
+    "mse": 0.7452380425232902
+  },
+  "v3_1": {
+    "gate_density": 1.0,
+    "slot_utilization": 0.20465087890625,
+    "class_coverage": 0.35982732351447433,
+    "mse": 0.74663397719183
+  }
+}

@@ -273,37 +273,41 @@ def compute_grn_losses(
     if dose is not None:
         dose = dose.to(device)
 
-    # 1) ΔE prediction
-    deltaE_pred = model(reg_idx=reg_idx, dose=dose, A=A)  # [B, G]
+    # 1) Nexus Signal (if available)
+    nexus_signal = None
+    deltaP_corr = None
+    if nexus_adapter is not None:
+        nexus_out = nexus_adapter(reg_idx=reg_idx, dose=dose)
+        nexus_signal = nexus_out["nexus_signal"]
+        deltaP_corr = nexus_out["deltaP_corr"]
 
-    # 2) Expression loss
+    # 2) ΔE prediction (Recursive Injection)
+    deltaE_pred = model(reg_idx=reg_idx, dose=dose, A=A, nexus_signal=nexus_signal)  # [B, G]
+
+    # 3) Expression loss
     L_expr = ((deltaE_pred - deltaE_obs) ** 2).mean()
 
-    # 3) Geometric prior (frozen EGGFM)
+    # 4) Geometric prior (frozen EGGFM)
     if loss_cfg.lambda_geo != 0.0:
         x_hat = x_ref.unsqueeze(0) + deltaE_pred   # [B, G]
-
-        # energy at current prediction
         energy = energy_prior(x_hat)               # [B]
-
-        # energy at reference control point (cacheable)
-        if energy_ref is None:
+        
+        global energy_ref
+        try:
+            energy_ref
+        except NameError:
             with torch.no_grad():
                 energy_ref = energy_prior(x_ref.unsqueeze(0)).mean()
 
         rel_energy = energy - energy_ref           # [B]
         rel_energy_pos = torch.relu(rel_energy)    # only penalize high-energy states
-
         L_geo = float(loss_cfg.lambda_geo) * rel_energy_pos.mean()
     else:
         L_geo = torch.zeros((), device=device)    
 
-    # 4) Program-level supervision
+    # 5) Program-level supervision
     deltaP_pred = deltaE_pred @ W              # [B, K]
-
-    # [Nexus Integration]
-    if nexus_adapter is not None:
-        deltaP_corr = nexus_adapter(reg_idx=reg_idx, dose=dose)
+    if deltaP_corr is not None:
         deltaP_pred = deltaP_pred + deltaP_corr
 
     L_prog = torch.zeros((), device=device)
@@ -311,7 +315,7 @@ def compute_grn_losses(
         deltaP_obs = batch["deltaP_obs"].to(device)
         L_prog = loss_cfg.lambda_prog * ((deltaP_pred - deltaP_obs) ** 2).mean()
         
-    # 5) Trait head (optional)
+    # 6) Trait head (optional)
     L_trait = torch.zeros((), device=device)
     if trait_head is not None and "deltaY_obs" in batch and loss_cfg.lambda_trait != 0.0:
         deltaY_obs = batch["deltaY_obs"].to(device)
